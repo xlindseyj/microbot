@@ -21,7 +21,7 @@ public class KLooterOverlay extends OverlayPanel {
         try {
             panelComponent.setPreferredSize(new Dimension(200, 300));
             panelComponent.getChildren().add(TitleComponent.builder()
-                    .text("Micro Looter V" + KLooterPlugin.version)
+                    .text("KLooter v" + KLooterPlugin.version)
                     .color(Color.GREEN)
                     .build());
 
