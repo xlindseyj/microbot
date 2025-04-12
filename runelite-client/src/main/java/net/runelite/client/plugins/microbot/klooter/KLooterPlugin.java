@@ -5,6 +5,8 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.microbot.klooter.scripts.DefaultScript;
+import net.runelite.client.plugins.microbot.klooter.scripts.ForestryScript;
+import net.runelite.client.plugins.microbot.klooter.scripts.GrandExchangeScript;
 import net.runelite.client.ui.overlay.OverlayManager;
 
 import javax.inject.Inject;
@@ -20,6 +22,10 @@ public class KLooterPlugin extends Plugin {
     public static double version = 1.0;
     @Inject
     DefaultScript defaultScript;
+    @Inject
+    ForestryScript forestryScript;
+    @Inject
+    GrandExchangeScript grandExchangeScript;
     @Inject
     private KLooterConfig config;
     @Inject
@@ -41,6 +47,14 @@ public class KLooterPlugin extends Plugin {
             case DEFAULT:
                 defaultScript.run(config);
                 defaultScript.handleWalk(config);
+                break;
+            case FORESTRY:
+                forestryScript.run(config);
+                forestryScript.handleWalk(config);
+                break;
+            case GRAND_EXCHANGE:
+                grandExchangeScript.run(config);
+                grandExchangeScript.handleWalk(config);
                 break;
         }
         

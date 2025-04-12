@@ -6,7 +6,9 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum LooterActivity {
-    DEFAULT("Default");
+    DEFAULT("Default"),
+    FORESTRY("Forestry"),
+    GRAND_EXCHANGE("Grand Exchange");
 
     private final String name;
 }
