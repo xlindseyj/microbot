@@ -21,11 +21,12 @@ public class KLooterOverlay extends OverlayPanel {
         try {
             panelComponent.setPreferredSize(new Dimension(200, 300));
             panelComponent.getChildren().add(TitleComponent.builder()
-                    .text("KLooter v" + KLooterPlugin.version)
+                    .text("Kromite's Looter v" + KLooterPlugin.version)
                     .color(Color.GREEN)
                     .build());
 
-            panelComponent.getChildren().add(LineComponent.builder().build());
+            panelComponent.getChildren().add(LineComponent.builder()
+                    .build());
 
             panelComponent.getChildren().add(LineComponent.builder()
                     .left(Microbot.status)
@@ -33,6 +34,7 @@ public class KLooterOverlay extends OverlayPanel {
         } catch (Exception ex) {
             System.out.println(ex.getMessage());
         }
+
         return super.render(graphics);
     }
 }

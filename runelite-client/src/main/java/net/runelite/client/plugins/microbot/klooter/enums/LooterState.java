@@ -6,5 +6,12 @@ import lombok.Getter;
 public enum LooterState {
     LOOTING,
     WALKING,
-    BANKING
+    BANKING,
+    BREAKING,
+    LOGGING_IN,
+    LOGGING_OUT,
+    WAITING,
+    IDLE,
+    STARTING,
+    STOPPING
 }

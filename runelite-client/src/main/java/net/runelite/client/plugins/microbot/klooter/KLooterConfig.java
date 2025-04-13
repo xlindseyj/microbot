@@ -4,8 +4,11 @@ import net.runelite.client.config.*;
 import net.runelite.client.plugins.microbot.klooter.enums.DefaultLooterStyle;
 import net.runelite.client.plugins.microbot.klooter.enums.LooterActivity;
 
+import java.util.ArrayList;
+
 @ConfigGroup("KLooter")
 public interface KLooterConfig extends Config {
+    // ArrayList<String> listOfItemsForLooting = new ArrayList<>();
 
     // Configuration Sections
 
@@ -80,6 +83,18 @@ public interface KLooterConfig extends Config {
     )
     default boolean takeBreaks() { return false; }
 
+    @ConfigItem(
+            keyName = "breakTime",
+            name = "Break Time",
+            description = "Time to take a break in seconds",
+            position = 5,
+            section = generalSection
+    )
+    @Range(min = 1)
+    default int breakTime() {
+        return 5;
+    }
+
     // Looting Style - Configuration Items
 
     @ConfigItem(
@@ -112,7 +127,7 @@ public interface KLooterConfig extends Config {
             section = defaultSection
     )
     default String listOfItemsToLoot() {
-        return "bones,ashes";
+        return "Logs,Oak logs,Willow logs,Maple logs,Magic logs,Willow seed,Oak seed,Maple seed,Magic seed,Red chinchompa,Black chinchompa,Red chinchompa bait,Black chinchompa bait,Ashes";
     }
 
     @ConfigItem(
