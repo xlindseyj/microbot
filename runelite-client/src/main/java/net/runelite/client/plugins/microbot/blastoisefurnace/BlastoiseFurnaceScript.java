@@ -5,7 +5,6 @@ package net.runelite.client.plugins.microbot.blastoisefurnace;
 import java.awt.event.KeyEvent;
 import java.util.concurrent.TimeUnit;
 
-import net.runelite.api.widgets.ComponentID;
 import net.runelite.client.plugins.microbot.shortestpath.ShortestPathPlugin;
 import net.runelite.client.plugins.microbot.util.antiban.Rs2Antiban;
 import net.runelite.client.plugins.microbot.util.antiban.Rs2AntibanSettings;
@@ -19,7 +18,6 @@ import net.runelite.client.plugins.microbot.Script;
 import net.runelite.client.plugins.microbot.blastoisefurnace.enums.Bars;
 import net.runelite.client.plugins.microbot.blastoisefurnace.enums.State;
 import net.runelite.client.plugins.microbot.util.bank.Rs2Bank;
-import net.runelite.client.plugins.microbot.util.equipment.Rs2Equipment;
 import net.runelite.client.plugins.microbot.util.gameobject.Rs2GameObject;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
 import net.runelite.client.plugins.microbot.util.keyboard.Rs2Keyboard;
@@ -71,7 +69,7 @@ public class BlastoiseFurnaceScript extends Script {
                     return;
                 }
 
-                if (!super.run()) {
+                if (!super.run(config)) {
                     return;
                 }
 
@@ -96,18 +94,18 @@ public class BlastoiseFurnaceScript extends Script {
                             Rs2Bank.withdrawItem(coalBag);
                         }
 
-                        if (config.getBars().isRequiresGoldsmithGloves()) {
-                            hasGauntlets = Rs2Inventory.contains(ItemID.GOLDSMITH_GAUNTLETS) || Rs2Equipment.isWearing(ItemID.GOLDSMITH_GAUNTLETS);
-                            if (!hasGauntlets) {
-                                if (!Rs2Bank.hasItem(ItemID.GOLDSMITH_GAUNTLETS)) {
-                                    Microbot.showMessage("No goldsmith gauntlets found.");
-                                    this.shutdown();
-                                    return;
-                                }
-
-                                Rs2Bank.withdrawItem(ItemID.GOLDSMITH_GAUNTLETS);
-                            }
-                        }
+//                        if (config.getBars().isRequiresGoldsmithGloves()) {
+//                            hasGauntlets = Rs2Inventory.contains(ItemID.GOLDSMITH_GAUNTLETS) || Rs2Equipment.isWearing(ItemID.GOLDSMITH_GAUNTLETS);
+//                            if (!hasGauntlets) {
+//                                if (!Rs2Bank.hasItem(ItemID.GOLDSMITH_GAUNTLETS)) {
+//                                    Microbot.showMessage("No goldsmith gauntlets found.");
+//                                    this.shutdown();
+//                                    return;
+//                                }
+//
+//                                Rs2Bank.withdrawItem(ItemID.GOLDSMITH_GAUNTLETS);
+//                            }
+//                        }
 
                         if (Rs2Inventory.hasItem("bar")) {
                             Rs2Bank.depositAllExcept(coalBag, ItemID.GOLDSMITH_GAUNTLETS, ItemID.ICE_GLOVES, ItemID.SMITHS_GLOVES_I);
@@ -181,7 +179,7 @@ public class BlastoiseFurnaceScript extends Script {
             boolean multipleBarTypes = Rs2Widget.hasWidget("What would you like to take?");
             boolean canLootBar = Rs2Widget.hasWidget("How many would you like");
 
-            if (super.run()) {
+            if (super.run(config)) {
                 if (canLootBar) {
                     Rs2Keyboard.keyPress(KeyEvent.VK_SPACE);
                 } else if (multipleBarTypes) {
