@@ -657,7 +657,7 @@ public class Rs2Npc {
      * @return The corresponding {@link MenuAction}, or {@code null} if the index is invalid.
      */
     @Nullable
-    private static MenuAction getMenuAction(int index) {
+    public static MenuAction getMenuAction(int index) {
         if (Microbot.getClient().isWidgetSelected()) {
             return MenuAction.WIDGET_TARGET_ON_NPC;
         }
