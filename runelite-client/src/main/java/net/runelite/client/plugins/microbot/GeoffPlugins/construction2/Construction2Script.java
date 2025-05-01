@@ -14,13 +14,20 @@ import net.runelite.client.plugins.microbot.util.npc.Rs2Npc;
 import net.runelite.client.plugins.microbot.util.npc.Rs2NpcModel;
 import net.runelite.client.plugins.microbot.util.tabs.Rs2Tab;
 import net.runelite.client.plugins.microbot.util.widget.Rs2Widget;
+import net.runelite.client.plugins.microbot.util.mouse.Mouse;
+import net.runelite.client.plugins.microbot.util.mouse.VirtualMouse;
 
 import java.awt.event.KeyEvent;
 import java.util.concurrent.TimeUnit;
+import java.util.Random;
 
 public class Construction2Script extends Script {
 
     private static final int DEFAULT_DELAY = 600;
+    private static final int HUMAN_IDLE_BREAK_CHANCE = 8; // ~12.5% chance
+    private static final int MOUSE_OFFSCREEN_CHANCE = 5;  // ~20% chance
+
+    private final Random random = new Random();
     private Construction2State state = Construction2State.Idle;
 
     public TileObject getOakDungeonDoorSpace() {
@@ -336,6 +343,13 @@ public class Construction2Script extends Script {
             // return getGuildTrophySpace();
             default:
                 return null;
+        }
+    }
+
+    private void possiblyTakeIdleBreak() {
+        if (random.nextInt(100) < HUMAN_IDLE_BREAK_CHANCE) {
+            System.out.println("Taking human-like idle break...");
+            sleep(Rs2Random.between(3000, 12000));
         }
     }
 
