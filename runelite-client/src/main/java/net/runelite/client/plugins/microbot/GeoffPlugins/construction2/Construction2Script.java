@@ -9,7 +9,7 @@ import net.runelite.client.plugins.microbot.util.dialogues.Rs2Dialogue;
 import net.runelite.client.plugins.microbot.util.gameobject.Rs2GameObject;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
 import net.runelite.client.plugins.microbot.util.keyboard.Rs2Keyboard;
-import net.runelite.client.plugins.microbot.util.math.Random;
+import net.runelite.client.plugins.microbot.util.math.Rs2Random;
 import net.runelite.client.plugins.microbot.util.npc.Rs2Npc;
 import net.runelite.client.plugins.microbot.util.npc.Rs2NpcModel;
 import net.runelite.client.plugins.microbot.util.tabs.Rs2Tab;
@@ -61,6 +61,10 @@ public class Construction2Script extends Script {
 
     public boolean hasDialogueOptionToUnnote() {
         return Rs2Widget.findWidget("Un-note", null) != null;
+    }
+
+    public boolean hasDialogueOptionToFetch() {
+        return Rs2Widget.findWidget("Fetch from bank: 25 x Mahogany plank", null) != null;
     }
 
     public boolean hasPayButlerDialogue() {
@@ -132,7 +136,7 @@ public class Construction2Script extends Script {
     }
 
     private void calculateState(Construction2Config config) {
-        boolean hasRequiredPlanks = Rs2Inventory.hasItemAmount(config.selectedMode().getPlankItemId(), Random.random(8, 16));
+        boolean hasRequiredPlanks = Rs2Inventory.hasItemAmount(config.selectedMode().getPlankItemId(), Rs2Random.between(8, 16));
 
         TileObject space = null;
         TileObject builtObject = null;
@@ -274,6 +278,12 @@ public class Construction2Script extends Script {
             } else if (hasDialogueOptionToUnnote()) {
                 Rs2Keyboard.keyPress('1');
                 sleepUntilOnClientThread(() -> !hasDialogueOptionToUnnote());
+            } else if (hasDialogueOptionToFetch()) {
+                Rs2Keyboard.keyPress('1');
+                sleepUntilOnClientThread(() -> !hasDialogueOptionToFetch());
+            } else if (hasRemoveInterfaceOpen(config)) {
+                Rs2Keyboard.keyPress('1');
+                sleepUntilOnClientThread(() -> getBuildSpace(config) != null);
             } else if (hasPayButlerDialogue() || hasDialogueOptionToPay()) {
                 Rs2Keyboard.keyPress(KeyEvent.VK_SPACE);
                 sleep(400, 1000);

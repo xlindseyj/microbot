@@ -32,7 +32,7 @@ public class BreakingScript extends Script {
         Rs2Antiban.setActivity(Activity.GENERAL_COLLECTING);
         mainScheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(() -> {
             try {
-                if (!super.run(config)) return;
+                if (!super.run()) return;
                 if (!Microbot.isLoggedIn() || Rs2Combat.inCombat()) return;
                 if (Microbot.pauseAllScripts) return;
                 if (Rs2AntibanSettings.actionCooldownActive) return;

@@ -43,7 +43,6 @@ public class DefaultScript extends Script {
     public boolean visitedOnce;
     List<String> blacklistNames = new ArrayList<>();
 
-
     public static GildedAltarPlayerState state = GildedAltarPlayerState.IDLE;
 
     private boolean inHouse() {
@@ -54,10 +53,33 @@ public class DefaultScript extends Script {
         return Rs2Npc.getNpc("Phials");
     }
 
+    private String getBoneType() {
+        if (Microbot.getClient().getWidget(14352385) == null) {
+            if (!Rs2Inventory.isItemSelected()) {
+                Rs2Inventory.use("bones");
+                return Rs2Inventory.getSelectedItemName();
+            } else {
+                return Rs2Inventory.getSelectedItemName();
+            }
+        }
+        return null;
+    }
+
     private void interactWithPhials(String action) {
         Rs2NpcModel phials = getPhials();
         if (phials != null) {
-            Rs2Npc.interact(phials.getName(), action);
+            ArrayList<String> actions = new ArrayList<>();
+            // interact with phials to get the available actions
+            for (String actionName : phials.getActions()) {
+                if (actionName != null && !actionName.isEmpty()) {
+                    actions.add(actionName);
+                }
+            }
+
+            String npcName = phials.getName();
+            String boneType = getBoneType();
+            String combinedAction = action + " -> " + boneType;
+            Rs2Npc.interact(npcName, combinedAction);
             Rs2Player.waitForWalking();
         } else {
             System.out.println("Phials not found, retrying...");
@@ -177,7 +199,7 @@ public class DefaultScript extends Script {
         mainScheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(() -> {
             try {
                 if (!Microbot.isLoggedIn()) return;
-                if (!super.run(config)) {
+                if (!super.run()) {
                     return;
                 }
                 if (!Rs2Inventory.hasItem(995)) {

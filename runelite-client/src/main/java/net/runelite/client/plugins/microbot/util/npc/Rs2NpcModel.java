@@ -44,4 +44,11 @@ public class Rs2NpcModel extends ActorModel implements NPC {
     public @Nullable NpcOverrides getChatheadOverrides() {
         return runeliteNpc.getChatheadOverrides();
     }
+
+    public String[] getActions() {
+        if (runeliteNpc.getComposition() == null) {
+            return new String[0];
+        }
+        return runeliteNpc.getComposition().getActions();
+    }
 }

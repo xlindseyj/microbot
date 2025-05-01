@@ -69,7 +69,7 @@ public class BlastoiseFurnaceScript extends Script {
                     return;
                 }
 
-                if (!super.run(config)) {
+                if (!super.run()) {
                     return;
                 }
 
@@ -179,7 +179,7 @@ public class BlastoiseFurnaceScript extends Script {
             boolean multipleBarTypes = Rs2Widget.hasWidget("What would you like to take?");
             boolean canLootBar = Rs2Widget.hasWidget("How many would you like");
 
-            if (super.run(config)) {
+            if (super.run()) {
                 if (canLootBar) {
                     Rs2Keyboard.keyPress(KeyEvent.VK_SPACE);
                 } else if (multipleBarTypes) {

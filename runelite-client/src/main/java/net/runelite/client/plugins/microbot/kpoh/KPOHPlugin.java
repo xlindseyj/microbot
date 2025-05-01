@@ -22,6 +22,8 @@ import java.awt.*;
 )
 @Slf4j
 public class KPOHPlugin extends Plugin {
+    public static String version = "1.0.0";
+
     @Inject
     private KPOHConfig config;
 
