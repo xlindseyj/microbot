@@ -34,12 +34,6 @@ public class Construction2Overlay extends OverlayPanel {
                 .right(plugin.getState().toString())
                 .build());
 
-        // Custom paint using Graphics2D
-        graphics.setColor(Color.WHITE);
-        graphics.drawString("Construction State: " + plugin.getState(), 10, 50); // Example text
-        graphics.setColor(Color.RED);
-        graphics.drawRect(5, 5,150, 50); // Example rectangle
-
         return super.render(graphics);
     }
 }
