@@ -26,7 +26,7 @@ public class PrayerScript extends Script {
 
                 handlePrayer(config);
             } catch (Exception ex) {
-                System.err.println("Error: " + ex.getMessage());
+                Microbot.logStackTrace(this.getClass().getSimpleName(), ex);
             }
         }, 0, 500, TimeUnit.MILLISECONDS);
         return true;
@@ -36,7 +36,7 @@ public class PrayerScript extends Script {
         if (!Microbot.isLoggedIn() || !config.togglePrayer()) return;
         if (config.prayerStyle() != PrayerStyle.CONTINUOUS && config.prayerStyle() != PrayerStyle.ALWAYS_ON) return;
         if (config.prayerStyle() == PrayerStyle.CONTINUOUS) {
-            boolean underAttack = !Rs2Npc.getNpcsForPlayer().isEmpty() || Rs2Combat.inCombat();
+            boolean underAttack = Rs2Npc.getNpcsForPlayer().findAny().isPresent() || Rs2Combat.inCombat();
             Rs2Prayer.toggleQuickPrayer(underAttack);
         } else {
             if (super.run())

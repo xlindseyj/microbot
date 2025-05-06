@@ -2,14 +2,15 @@ package net.runelite.client.plugins.microbot.util.shop;
 
 import net.runelite.api.ItemComposition;
 import net.runelite.api.MenuAction;
-import net.runelite.api.NPC;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.widgets.ComponentID;
 import net.runelite.api.widgets.WidgetInfo;
 import net.runelite.client.plugins.microbot.Microbot;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2ItemModel;
+import net.runelite.client.plugins.microbot.util.math.Rs2Random;
 import net.runelite.client.plugins.microbot.util.menu.NewMenuEntry;
 import net.runelite.client.plugins.microbot.util.npc.Rs2Npc;
+import net.runelite.client.plugins.microbot.util.npc.Rs2NpcModel;
 import net.runelite.client.plugins.microbot.util.widget.Rs2Widget;
 
 import java.awt.*;
@@ -51,19 +52,23 @@ public class Rs2Shop {
      *
      * @return
      */
-    public static boolean openShop(String NPC) {
+    public static boolean openShop(String NPC, boolean exact) {
         Microbot.status = "Opening Shop";
         try {
             if (isOpen()) return true;
-            NPC npc = Rs2Npc.getNpc(NPC);
+            Rs2NpcModel npc = Rs2Npc.getNpc(NPC, exact);
             if (npc == null) return false;
             Rs2Npc.interact(npc, "Trade");
             sleepUntil(Rs2Shop::isOpen, 5000);
             return true;
         } catch (Exception ex) {
-            System.out.println(ex.getMessage());
+            Microbot.logStackTrace("Rs2Shop", ex);
         }
         return false;
+    }
+
+    public static boolean openShop(String npc) {
+        return openShop(npc, false);
     }
 
     /**
@@ -88,9 +93,31 @@ public class Rs2Shop {
             }
 
         } catch (Exception ex) {
-            System.out.println(ex.getMessage());
+            Microbot.logStackTrace("Rs2Shop", ex);
         }
         return true;
+    }
+
+    /**
+     * Buys an item in an optimal way given the desired total quantity.
+     * The allowed quantities per purchase are: 1, 5, 10, and 50.
+     *
+     * @param itemName The name of the item to buy.
+     * @param desiredQuantity The total quantity of the item to buy.
+     */
+    public static void buyItemOptimally(String itemName, int desiredQuantity) {
+        // Allowed quantities in descending order to ensure optimal (minimal) calls.
+        int[] allowedQuantities = {50, 10, 5, 1};
+
+        for (int allowed : allowedQuantities) {
+            // While the remaining quantity is at least the current allowed denomination,
+            // execute the buy method for that denomination.
+            while (desiredQuantity >= allowed) {
+                buyItem(itemName, String.valueOf(allowed));
+                desiredQuantity -= allowed;
+                Rs2Random.waitEx(900, 300);
+            }
+        }
     }
 
     /**

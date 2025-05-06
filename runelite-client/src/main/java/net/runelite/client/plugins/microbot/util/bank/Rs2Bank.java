@@ -14,10 +14,13 @@ import net.runelite.client.plugins.microbot.Microbot;
 import net.runelite.client.plugins.microbot.shortestpath.ShortestPathPlugin;
 import net.runelite.client.plugins.microbot.shortestpath.Transport;
 import net.runelite.client.plugins.microbot.shortestpath.TransportType;
+import net.runelite.client.plugins.microbot.shortestpath.pathfinder.Pathfinder;
 import net.runelite.client.plugins.microbot.util.antiban.Rs2AntibanSettings;
 import net.runelite.client.plugins.microbot.util.bank.enums.BankLocation;
 import net.runelite.client.plugins.microbot.util.coords.Rs2WorldPoint;
+import net.runelite.client.plugins.microbot.util.depositbox.DepositBoxLocation;
 import net.runelite.client.plugins.microbot.util.equipment.Rs2Equipment;
+import net.runelite.client.plugins.microbot.util.gameobject.Rs2BankID;
 import net.runelite.client.plugins.microbot.util.gameobject.Rs2GameObject;
 import net.runelite.client.plugins.microbot.util.grandexchange.Rs2GrandExchange;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
@@ -155,10 +158,10 @@ public class Rs2Bank {
     /**
      * Closes the bank interface if it is open.
      *
-     * @return true if the bank interface was open and successfully closed, false otherwise.
+     * @return true if the bank interface was open and successfully closed, true if already closed.
      */
     public static boolean closeBank() {
-        if (!isOpen()) return false;
+        if (!isOpen()) return true;
         if (Rs2Settings.isEscCloseInterfaceSettingEnabled()) {
             Rs2Keyboard.keyPress(KeyEvent.VK_ESCAPE);
         } else {
@@ -714,6 +717,24 @@ public class Rs2Bank {
     }
 
     /**
+     * Deposits all items in the player's inventory into the bank,
+     * except for the items in the given map.
+     * Each key is the item name, and the value indicates whether to fuzzy match it.
+     *
+     * @param itemsToExclude A map of item names to a boolean indicating fuzzy match.
+     * @return true if any items were deposited, false otherwise.
+     */
+    public static boolean depositAllExcept(Map<String, Boolean> itemsToExclude) {
+        return depositAll(item -> itemsToExclude.entrySet().stream().noneMatch(entry -> {
+            String excludedItemName = entry.getKey();
+            boolean isFuzzy = entry.getValue();
+            return isFuzzy
+                    ? item.getName().toLowerCase().contains(excludedItemName.toLowerCase())
+                    : item.getName().equalsIgnoreCase(excludedItemName);
+        }));
+    }
+
+    /**
      * Deposits all items in the player's inventory into the bank, except for the items with the specified names.
      * This method uses a lambda function to filter out the items with the specified names from the deposit operation.
      * It also allows for a delay between deposit operations.
@@ -947,7 +968,7 @@ public class Rs2Bank {
      * @param exact  exact search based on equalsIgnoreCase
      */
     public static boolean withdrawX(String name, int amount, boolean exact) {
-        return withdrawXItem(findBankItem(name, exact), amount);
+        return withdrawXItem(findBankItem(name, exact,amount), amount);
     }
 
     /**
@@ -957,7 +978,7 @@ public class Rs2Bank {
      * @param amount amount to withdraw
      */
     public static boolean withdrawX(String name, int amount) {
-        return withdrawXItem(findBankItem(name, false), amount);
+        return withdrawXItem(findBankItem(name, false,amount), amount);
     }
 
     /**
@@ -1142,6 +1163,55 @@ public class Rs2Bank {
     }
 
     /**
+     * Check if a bank (or equivalent) is close by without interacting.
+     * Prioritizes bank > bank booth > chest > banker NPC.
+     *
+     * @return True if a nearby bank candidate is found, otherwise false.
+     */
+    public static boolean isBankCloseby() {
+        Microbot.status = "Checking bank proximity";
+        try {
+            // If bank interface is already open, consider a bank available.
+            if (isOpen()) return true;
+
+            // Identify potential banking objects.
+            WallObject grandExchangeBooth = Rs2GameObject.getWallObjects()
+                    .stream()
+                    .filter(x -> x.getId() == 10060 || x.getId() == 30389)
+                    .filter(y -> Rs2Tile.isTileReachable(y.getWorldLocation()))
+                    .findFirst()
+                    .orElse(null);
+            GameObject bank = Rs2GameObject.findBank();
+            GameObject chest = Rs2GameObject.findChest();
+
+            // Determine if chest is closer than the bank.
+            boolean useChest = bank != null && chest != null &&
+                    bank.getWorldLocation().distanceTo2D(Rs2Player.getWorldLocation()) >
+                            chest.getWorldLocation().distanceTo2D(Rs2Player.getWorldLocation()) && Rs2Tile.isTileReachable(chest.getWorldLocation());
+
+            // Check for a nearby bank candidate based on prioritized order.
+            if (!useChest && bank != null &&
+                    (grandExchangeBooth == null ||
+                            bank.getWorldLocation().distanceTo(Rs2Player.getWorldLocation()) <=
+                                    grandExchangeBooth.getWorldLocation().distanceTo(Rs2Player.getWorldLocation()) && Rs2Tile.isTileReachable(bank.getWorldLocation())) ) {
+                return true;
+            } else if (grandExchangeBooth != null) {
+                return true;
+            } else if (chest != null) {
+                return true;
+            } else {
+                // Fallback: Check for a banker NPC.
+                Rs2NpcModel npc = Rs2Npc.getBankerNPC();
+                return (npc != null && Rs2Tile.isTileReachable(npc.getWorldLocation()));
+            }
+        } catch (Exception ex) {
+            System.out.println(ex.getMessage());
+        }
+        return false;
+    }
+
+
+    /**
      * Find closest available bank
      * finds closest npc then bank booth then chest
      * @return True if bank was successfully opened, otherwise false.
@@ -1182,7 +1252,7 @@ public class Rs2Bank {
             }
             return action;
         } catch (Exception ex) {
-            System.out.println(ex.getMessage());
+            Microbot.logStackTrace("Rs2Bank", ex);
         }
         return false;
     }
@@ -1205,7 +1275,7 @@ public class Rs2Bank {
             sleep(Rs2Random.randomGaussian(800,200));
             return true;
         } catch (Exception ex) {
-            System.out.println(ex.getMessage());
+            Microbot.logStackTrace("Rs2Bank", ex);
         }
         return false;
     }
@@ -1239,7 +1309,7 @@ public class Rs2Bank {
             sleep(Rs2Random.randomGaussian(800,200));
             return true;
         } catch (Exception ex) {
-            System.out.println(ex.getMessage());
+            Microbot.logStackTrace("Rs2Bank", ex);
         }
         return false;
     }
@@ -1307,20 +1377,16 @@ public class Rs2Bank {
      */
     @SuppressWarnings("UnnecessaryLocalVariable")
     private static Rs2ItemModel findBankItem(String name, boolean exact, int amount) {
-        if (bankItems == null) return null;
-        if (bankItems.stream().findAny().isEmpty()) return null;
-
-        final String lowerCaseName = name.toLowerCase();
-
-        Rs2ItemModel bankItem = bankItems.stream().filter(x -> exact
-                ? x.name.equalsIgnoreCase(lowerCaseName)
-                : x.name.toLowerCase().contains(lowerCaseName)).findFirst().orElse(null);
-
-        if (bankItem == null || bankItem.quantity < amount)
-            return null;
-
-        return bankItem;
+    if (bankItems == null || bankItems.isEmpty()) {
+        return null;
     }
+    final String lowerCaseName = name.toLowerCase();
+    return bankItems.stream()
+            .filter(x -> exact ? x.name.equalsIgnoreCase(lowerCaseName) : x.name.toLowerCase().contains(lowerCaseName))
+            .filter(x -> x.quantity >= amount)
+            .findAny()
+            .orElse(null);
+}
 
     /**
      * Finds an item in the bank based on a list of names.
@@ -1343,135 +1409,110 @@ public class Rs2Bank {
     }
 
     /**
-     * Get the nearest bank
+     * Returns the nearest accessible bank to the local player’s current location.
      *
-     * @return BankLocation
+     * @return the nearest {@link BankLocation}, or {@code null} if none was reachable
      */
     public static BankLocation getNearestBank() {
         return getNearestBank(Microbot.getClient().getLocalPlayer().getWorldLocation());
     }
 
     /**
-     * Finds the nearest bank, prioritizing available transports first before pathfinding
-     * @param worldPoint The current location
-     * @return The nearest bank location, or null if no accessible bank was found
+     * Returns the nearest accessible bank to the specified world point,
+     * using a default search radius of 15 tiles.
+     *
+     * @param worldPoint the starting location from which to search for banks
+     * @return the nearest {@link BankLocation}, or {@code null} if none was reachable
      */
     public static BankLocation getNearestBank(WorldPoint worldPoint) {
+        return getNearestBank(worldPoint, 15);
+    }
+
+    /**
+     * Finds the nearest accessible bank location from the given world point.
+     * <p>
+     * First, searches for bank booth {@link TileObject}s within
+     * {@code maxObjectSearchRadius} tiles of the player and picks the closest
+     * one whose underlying {@link BankLocation#hasRequirements()} passes. If no booth
+     * is found or none are within range, falls back to running a full pathfinding
+     * search (including configured transports) to all accessible bank coordinates,
+     * then returns the bank at the end of the shortest path.
+     * </p>
+     *
+     * @param worldPoint            the starting location for pathfinding
+     * @param maxObjectSearchRadius the maximum radius (in tiles) to scan for bank booth objects
+     * @return the nearest {@link BankLocation}, or {@code null} if no accessible bank could be reached
+     */
+    public static BankLocation getNearestBank(WorldPoint worldPoint, int maxObjectSearchRadius) {
         Microbot.log("Finding nearest bank...");
 
-        // Get accessible banks sorted by straight-line distance
-        List<BankLocation> accessibleBanks = Arrays.stream(BankLocation.values())
+        Set<BankLocation> accessibleBanks = Arrays.stream(BankLocation.values())
                 .filter(BankLocation::hasRequirements)
-                .sorted(Comparator.comparingInt(bank -> Rs2WorldPoint.quickDistance(bank.getWorldPoint(), worldPoint)))
-                .collect(Collectors.toList());
+                .collect(Collectors.toSet());
 
         if (accessibleBanks.isEmpty()) {
             Microbot.log("No accessible banks found");
             return null;
         }
 
-        // Check if the closest bank is within walking distance (30 tiles)
-        BankLocation closestBank = accessibleBanks.get(0);
-        int closestDistance = Rs2WorldPoint.quickDistance(closestBank.getWorldPoint(), worldPoint);
+        if (Microbot.getClient().getLocalPlayer().getWorldLocation() == worldPoint) {
+            List<Integer> boothIds = Arrays.asList(Rs2BankID.bankIds);
+            List<TileObject> bankObjs = Rs2GameObject.getGameObjects().stream()
+                    .filter(obj -> obj.getWorldLocation().distanceTo(worldPoint) < maxObjectSearchRadius)
+                    .filter(obj -> boothIds.contains(obj.getId()))
+                    .collect(Collectors.toList());
 
-        if (closestDistance < 30) {
-            Microbot.log("Found nearest bank: " + closestBank.name() + " (walkable)");
-            return closestBank;
+            Optional<BankLocation> fromObject = bankObjs.stream()
+                    .map(obj -> {
+                        BankLocation closest = accessibleBanks.stream()
+                                .min(Comparator.comparingInt(b -> obj.getWorldLocation().distanceTo(b.getWorldPoint())))
+                                .orElse(null);
+
+                        int dist = closest == null
+                                ? Integer.MAX_VALUE
+                                : obj.getWorldLocation().distanceTo(closest.getWorldPoint());
+
+                        return new AbstractMap.SimpleEntry<>(closest, dist);
+                    })
+                    .filter(e -> e.getKey() != null && e.getValue() <= maxObjectSearchRadius)
+                    .min(Comparator.comparingInt(Map.Entry::getValue))
+                    .map(Map.Entry::getKey);
+
+            if (fromObject.isPresent()) {
+                Microbot.log("Found nearest bank (object): " + fromObject.get());
+                return fromObject.get();
+            }
         }
 
-        // Try to find a bank accessible via teleport
-        BankLocation teleportBank = findBankViaTeleport(accessibleBanks);
-        if (teleportBank != null) {
-            Microbot.log("Found nearest bank: " + teleportBank.name() + " (via teleport)");
-            return teleportBank;
+        Set<WorldPoint> targets = accessibleBanks.stream()
+                .map(BankLocation::getWorldPoint)
+                .collect(Collectors.toSet());
+
+        if (ShortestPathPlugin.getPathfinderConfig().getTransports().isEmpty()) {
+            ShortestPathPlugin.getPathfinderConfig().refresh();
         }
 
-        // Calculate paths to all banks and find the shortest
-        BankLocation shortestPathBank = findNearestBankByDistance(worldPoint, accessibleBanks);
-        if (shortestPathBank != null) {
-            Microbot.log("Found nearest bank: " + shortestPathBank.name() + " (shortest path)");
-            return shortestPathBank;
-        }
+        Pathfinder pf = new Pathfinder(ShortestPathPlugin.getPathfinderConfig(), worldPoint, targets);
+        pf.run();
 
-        Microbot.log("Unable to find nearest bank");
-        return null;
-    }
-
-    /**
-     * Finds a bank that can be accessed via teleport
-     * @param banks List of banks to check
-     * @return The bank with the shortest teleport distance, or null if none found
-     */
-    private static BankLocation findBankViaTeleport(List<BankLocation> banks) {
-        Map<WorldPoint, Set<Transport>> allTransports = ShortestPathPlugin.getPathfinderConfig().getTransports();
-        Map<Transport, WorldPoint> teleports = collectUsableTeleports(allTransports);
-
-        if (teleports.isEmpty()) {
+        List<WorldPoint> path = pf.getPath();
+        if (path.isEmpty()) {
+            Microbot.log("Unable to find path to any bank");
             return null;
         }
 
-        BankLocation bestBank = null;
-        int shortestDistance = Integer.MAX_VALUE;
+        WorldPoint nearestTile = path.get(path.size() - 1);
+        Optional<BankLocation> byPath = accessibleBanks.stream()
+                .filter(b -> b.getWorldPoint().equals(nearestTile))
+                .findFirst();
 
-        for (BankLocation bank : banks) {
-            for (Map.Entry<Transport, WorldPoint> entry : teleports.entrySet()) {
-                Transport transport = entry.getKey();
-
-                if (transport.getDestination() != null) {
-                    int distanceToBank = transport.getDestination().distanceTo2D(bank.getWorldPoint());
-
-                    if (distanceToBank < shortestDistance) {
-                        shortestDistance = distanceToBank;
-                        bestBank = bank;
-                    }
-                }
-            }
+        if (byPath.isPresent()) {
+            Microbot.log("Found nearest bank (shortest path): " + byPath.get());
+            return byPath.get();
         }
 
-        return bestBank;
-    }
-
-    /**
-     * Collects all usable teleport transports
-     * @param allTransports Map of all transports
-     * @return Map of teleport transports with their origin points
-     */
-    private static Map<Transport, WorldPoint> collectUsableTeleports(Map<WorldPoint, Set<Transport>> allTransports) {
-        Map<Transport, WorldPoint> usableTeleports = new HashMap<>();
-
-        for (Map.Entry<WorldPoint, Set<Transport>> entry : allTransports.entrySet()) {
-            WorldPoint originPoint = entry.getKey();
-            for (Transport transport : entry.getValue()) {
-                if (transport.getType() == TransportType.TELEPORTATION_ITEM ||
-                        transport.getType() == TransportType.TELEPORTATION_SPELL ||
-                        transport.getType() == TransportType.TELEPORTATION_MINIGAME) {
-                    usableTeleports.put(transport, originPoint);
-                }
-            }
-        }
-
-        return usableTeleports;
-    }
-
-    /**
-     * Finds the bank with the shortest path from the current location
-     * @param worldPoint The current location
-     * @param banks List of banks to check
-     * @return The bank with the shortest path, or null if none found
-     */
-    private static BankLocation findNearestBankByDistance(WorldPoint worldPoint, List<BankLocation> banks) {
-        BankLocation bestBank = null;
-        int shortestPath = Integer.MAX_VALUE;
-
-        for (BankLocation bank : banks) {
-            int closestDistance = Rs2WorldPoint.quickDistance(bank.getWorldPoint(), worldPoint);
-            if (closestDistance < shortestPath) {
-                shortestPath = closestDistance;
-                bestBank = bank;
-            }
-        }
-
-        return bestBank;
+        Microbot.log("Nearest bank point " + nearestTile + " did not match any BankLocation");
+        return null;
     }
 
     /**
@@ -1540,6 +1581,9 @@ public class Rs2Bank {
      * @return true if the bank interface is successfully opened.
      */
     public static boolean walkToBankAndUseBank() {
+        if(isBankCloseby()){
+            return openBank();
+        }
         return walkToBankAndUseBank(getNearestBank());
     }
 
@@ -1812,6 +1856,28 @@ public class Rs2Bank {
         Rs2ItemModel fishBarrel = Rs2Inventory.get(ItemID.FISH_BARREL,ItemID.OPEN_FISH_BARREL);
         if (fishBarrel == null) return false;
         return Rs2Inventory.interact(fishBarrel, "Empty");
+    }
+
+    /**
+     * Empty herb sack
+     *
+     * @return true if herb sack was emptied
+     */
+    public static boolean emptyHerbSack() {
+        Rs2ItemModel herbSack = Rs2Inventory.get(ItemID.HERB_SACK,ItemID.OPEN_HERB_SACK);
+        if (herbSack == null) return false;
+        return Rs2Inventory.interact(herbSack, "Empty");
+    }
+
+    /**
+     * Empty seed box
+     *
+     * @return true if seed box was emptied
+     */
+    public static boolean emptySeedBox() {
+        Rs2ItemModel seedBox = Rs2Inventory.get(ItemID.SEED_BOX,ItemID.OPEN_SEED_BOX);
+        if (seedBox == null) return false;
+        return Rs2Inventory.interact(seedBox, "Empty");
     }
 
 

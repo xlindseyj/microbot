@@ -22,7 +22,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static net.runelite.client.plugins.microbot.shortestpath.TransportType.*;
+import static net.runelite.client.plugins.microbot.shortestpath.TransportType.TELEPORTATION_ITEM;
+import static net.runelite.client.plugins.microbot.shortestpath.TransportType.TELEPORTATION_SPELL;
 
 public class PathfinderConfig {
     private static final WorldArea WILDERNESS_ABOVE_GROUND = new WorldArea(2944, 3523, 448, 448, 0);
@@ -31,6 +32,15 @@ public class PathfinderConfig {
     private static final WorldArea WILDERNESS_UNDERGROUND = new WorldArea(2944, 9918, 320, 442, 0);
     private static final WorldArea WILDERNESS_UNDERGROUND_LEVEL_19 = new WorldArea(2944, 10067, 320, 442, 0);
     private static final WorldArea WILDERNESS_UNDERGROUND_LEVEL_29 = new WorldArea(2944, 10147, 320, 442, 0);
+    private static final WorldArea FEROX_ENCLAVE_1 = new WorldArea(3123, 3622, 2, 10, 0);
+    private static final WorldArea FEROX_ENCLAVE_2 = new WorldArea(3125, 3617, 16, 23, 0);
+    private static final WorldArea FEROX_ENCLAVE_3 = new WorldArea(3138, 3636, 18, 10, 0);
+    private static final WorldArea FEROX_ENCLAVE_4 = new WorldArea(3141, 3625, 14, 11, 0);
+    private static final WorldArea FEROX_ENCLAVE_5 = new WorldArea(3141, 3619, 7, 6, 0);
+    private static final WorldArea NOT_WILDERNESS_1 = new WorldArea(2997, 3525, 34, 9, 0);
+    private static final WorldArea NOT_WILDERNESS_2 = new WorldArea(3005, 3534, 21, 10, 0);
+    private static final WorldArea NOT_WILDERNESS_3 = new WorldArea(3000, 3534, 5, 5, 0);
+    private static final WorldArea NOT_WILDERNESS_4 = new WorldArea(3031, 3525, 2, 2, 0);
 
     private final SplitFlagMap mapData;
     private final ThreadLocal<CollisionMap> map;
@@ -38,6 +48,7 @@ public class PathfinderConfig {
     private final Map<WorldPoint, Set<Transport>> allTransports;
     @Setter
     private Set<Transport> usableTeleports;
+    private final List<WorldPoint> filteredTargets = new ArrayList<>(4);
 
     @Getter
     private ConcurrentHashMap<WorldPoint, Set<Transport>> transports;
@@ -191,11 +202,32 @@ public class PathfinderConfig {
         }
     }
 
+    public void filterLocations(Set<WorldPoint> locations, boolean canReviveFiltered) {
+        if (avoidWilderness) {
+            locations.removeIf(location -> {
+                boolean inWilderness = PathfinderConfig.isInWilderness(location);
+                if (inWilderness) {
+                    filteredTargets.add(location);
+                }
+                return inWilderness;
+            });
+            // If we ended up with no valid locations we re-include the filtered locations
+            if (locations.isEmpty()) {
+                locations.addAll(filteredTargets);
+                filteredTargets.clear();
+            }
+        } else if (canReviveFiltered) { // Re-include previously filtered locations
+            locations.addAll(filteredTargets);
+            filteredTargets.clear();
+        }
+    }
+
     private void refreshTransports() {
         useFairyRings &= !QuestState.NOT_STARTED.equals(Rs2Player.getQuestState(Quest.FAIRYTALE_II__CURE_A_QUEEN))
                 && (Rs2Inventory.contains(ItemID.DRAMEN_STAFF, ItemID.LUNAR_STAFF)
                 || Rs2Equipment.isWearing(ItemID.DRAMEN_STAFF)
                 || Rs2Equipment.isWearing(ItemID.LUNAR_STAFF)
+                || (ShortestPathPlugin.getPathfinderConfig().useBankItems && (Rs2Bank.hasItem(ItemID.DRAMEN_STAFF)|| Rs2Bank.hasItem(ItemID.LUNAR_STAFF)))
                 || Microbot.getVarbitValue(Varbits.DIARY_LUMBRIDGE_ELITE)  == 1);
         useGnomeGliders &= QuestState.FINISHED.equals(Rs2Player.getQuestState(Quest.THE_GRAND_TREE));
         useSpiritTrees &= QuestState.FINISHED.equals(Rs2Player.getQuestState(Quest.TREE_GNOME_VILLAGE));
@@ -361,12 +393,40 @@ public class PathfinderConfig {
     }
 
     public static boolean isInWilderness(WorldPoint p) {
-        return WILDERNESS_ABOVE_GROUND.distanceTo(p) == 0 || WILDERNESS_UNDERGROUND.distanceTo(p) == 0;
+        return WILDERNESS_ABOVE_GROUND.distanceTo(p) == 0
+                && FEROX_ENCLAVE_1.distanceTo(p) != 0
+                && FEROX_ENCLAVE_2.distanceTo(p) != 0
+                && FEROX_ENCLAVE_3.distanceTo(p) != 0
+                && FEROX_ENCLAVE_4.distanceTo(p) != 0
+                && FEROX_ENCLAVE_5.distanceTo(p) != 0
+                && NOT_WILDERNESS_1.distanceTo(p) != 0
+                && NOT_WILDERNESS_2.distanceTo(p) != 0
+                && NOT_WILDERNESS_3.distanceTo(p) != 0
+                && NOT_WILDERNESS_4.distanceTo(p) != 0
+                || WILDERNESS_UNDERGROUND.distanceTo(p) == 0;
     }
 
-    public boolean isInWilderness(int packedPoint) {
+    public static boolean isInWilderness(int packedPoint) {
         return WorldPointUtil.distanceToArea(packedPoint, WILDERNESS_ABOVE_GROUND) == 0
+                && WorldPointUtil.distanceToArea(packedPoint, FEROX_ENCLAVE_1) != 0
+                && WorldPointUtil.distanceToArea(packedPoint, FEROX_ENCLAVE_2) != 0
+                && WorldPointUtil.distanceToArea(packedPoint, FEROX_ENCLAVE_3) != 0
+                && WorldPointUtil.distanceToArea(packedPoint, FEROX_ENCLAVE_4) != 0
+                && WorldPointUtil.distanceToArea(packedPoint, FEROX_ENCLAVE_5) != 0
+                && WorldPointUtil.distanceToArea(packedPoint, NOT_WILDERNESS_1) != 0
+                && WorldPointUtil.distanceToArea(packedPoint, NOT_WILDERNESS_2) != 0
+                && WorldPointUtil.distanceToArea(packedPoint, NOT_WILDERNESS_3) != 0
+                && WorldPointUtil.distanceToArea(packedPoint, NOT_WILDERNESS_4) != 0
                 || WorldPointUtil.distanceToArea(packedPoint, WILDERNESS_UNDERGROUND) == 0;
+    }
+
+    public static boolean isInWilderness(Set<WorldPoint> worldPoints) {
+        for (WorldPoint worldPoint : worldPoints) {
+            if (isInWilderness(worldPoint)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public boolean avoidWilderness(int packedPosition, int packedNeightborPosition, boolean targetInWilderness) {
@@ -432,7 +492,7 @@ public class PathfinderConfig {
         if (!varplayerChecks(transport)) return false;
         // If you don't have the required currency & amount for transport
         if (transport.getCurrencyAmount() > 0 && !Rs2Inventory.hasItemAmount(transport.getCurrencyName(), transport.getCurrencyAmount())) return false;
-        // Check if Teleports are globally disabled 
+        // Check if Teleports are globally disabled
         if (TransportType.isTeleport(transport.getType()) && Rs2Walker.disableTeleports) return false;
         // Check Teleport Item Settings
         if (transport.getType() == TELEPORTATION_ITEM) return isTeleportationItemUsable(transport);
@@ -554,10 +614,15 @@ public class PathfinderConfig {
     private boolean hasRequiredItems(Transport transport) {
         if (requiresChronicle(transport)) return hasChronicleCharges();
 
+//        return transport.getItemIdRequirements()
+//                .stream()
+//                .flatMap(Collection::stream)
+//                .anyMatch(itemId -> Rs2Equipment.isWearing(itemId) || Rs2Inventory.hasItem(itemId) || Rs2Bank.hasItem(itemId));
+
         return transport.getItemIdRequirements()
                 .stream()
                 .flatMap(Collection::stream)
-                .anyMatch(itemId -> Rs2Equipment.isWearing(itemId) || Rs2Inventory.hasItem(itemId) || (useBankItems && Rs2Bank.hasItem(itemId)));
+                .anyMatch(itemId -> Rs2Equipment.isWearing(itemId) || Rs2Inventory.hasItem(itemId) || (ShortestPathPlugin.getPathfinderConfig().useBankItems && Rs2Bank.hasItem(itemId)));
     }
 
     /** Checks if the player has any of the required equipment and inventory items for the restriction */

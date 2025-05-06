@@ -356,9 +356,7 @@ public class Rs2Walker {
                 setTarget(null);
                 return WalkerState.EXIT;
             }
-            ex.printStackTrace(System.out);
-            Microbot.log("Microbot Walker Exception " + ex.getMessage());
-            System.out.println(ex.getMessage());
+            Microbot.logStackTrace("Rs2Walker", ex);
         }
         return WalkerState.EXIT;
     }
@@ -766,7 +764,9 @@ public static List<WorldPoint> getWalkPath(WorldPoint target) {
         if (!Rs2Inventory.hasItem("pickaxe")) {
             if (!Rs2Equipment.isWearing("pickaxe")) {
                 Microbot.log("Unable to find pickaxe to mine rockfall");
-                setTarget(null);
+                if (currentTarget.getRegionID() == 14936) {
+                    setTarget(null);
+                }
                 return false;
             }
         }
@@ -1051,6 +1051,10 @@ public static List<WorldPoint> getWalkPath(WorldPoint target) {
      * @param end
      */
     public static boolean restartPathfinding(WorldPoint start, WorldPoint end) {
+        return restartPathfinding(start, Set.of(end));
+    }
+
+    public static boolean restartPathfinding(WorldPoint start, Set<WorldPoint> ends) {
         if (Microbot.getClient().isClientThread()) return false;
 
         if (ShortestPathPlugin.getPathfinder() != null) {
@@ -1065,10 +1069,10 @@ public static List<WorldPoint> getWalkPath(WorldPoint target) {
 
         ShortestPathPlugin.getPathfinderConfig().refresh();
         if (Rs2Player.isInCave()) {
-            Pathfinder pathfinder = new Pathfinder(ShortestPathPlugin.getPathfinderConfig(), start, end);
+            Pathfinder pathfinder = new Pathfinder(ShortestPathPlugin.getPathfinderConfig(), start, ends);
             pathfinder.run();
             ShortestPathPlugin.getPathfinderConfig().setIgnoreTeleportAndItems(true);
-            Pathfinder pathfinderWithoutTeleports = new Pathfinder(ShortestPathPlugin.getPathfinderConfig(), start, end);
+            Pathfinder pathfinderWithoutTeleports = new Pathfinder(ShortestPathPlugin.getPathfinderConfig(), start, ends);
             pathfinderWithoutTeleports.run();
             if (pathfinder.getPath().size() >= pathfinderWithoutTeleports.getPath().size()) {
                 ShortestPathPlugin.setPathfinder(pathfinderWithoutTeleports);
@@ -1077,7 +1081,7 @@ public static List<WorldPoint> getWalkPath(WorldPoint target) {
             }
             ShortestPathPlugin.getPathfinderConfig().setIgnoreTeleportAndItems(false);
         } else {
-            ShortestPathPlugin.setPathfinder(new Pathfinder(ShortestPathPlugin.getPathfinderConfig(), start, end));
+            ShortestPathPlugin.setPathfinder(new Pathfinder(ShortestPathPlugin.getPathfinderConfig(), start, ends));
             ShortestPathPlugin.setPathfinderFuture(ShortestPathPlugin.getPathfindingExecutor().submit(ShortestPathPlugin.getPathfinder()));
         }
         return true;
@@ -1159,8 +1163,8 @@ public static List<WorldPoint> getWalkPath(WorldPoint target) {
                                     Rs2Dialogue.clickContinue();
                                 }
                                 sleepUntil(() -> !Rs2Player.isAnimating());
-                                sleepUntilTrue(() -> Rs2Player.getWorldLocation().distanceTo(transport.getDestination()) < 10);
-                                sleep(600 * 4);
+                                sleepUntil(() -> Rs2Player.getWorldLocation().distanceTo(transport.getDestination()) < 10);
+                                sleep(600 * 6);
                             } else {
                                 Rs2Walker.walkFastCanvas(path.get(i));
                                 sleep(1200, 1600);
@@ -1175,15 +1179,14 @@ public static List<WorldPoint> getWalkPath(WorldPoint target) {
                     }
 
                     if (transport.getType() == TransportType.CHARTER_SHIP) {
-                        if (Rs2Widget.getWidget(72, 0) != null) {
-                            Widget destination = Rs2Widget.findWidget(transport.getDisplayInfo(), Arrays.stream(Rs2Widget.getWidget(72, 0).getStaticChildren()).collect(Collectors.toList()), false);
-                            if (destination == null) break;
+                        sleepUntil(() -> Rs2Widget.isWidgetVisible(72, 0));
+                        Widget destination = Rs2Widget.findWidget(transport.getDisplayInfo(), Arrays.stream(Rs2Widget.getWidget(72, 0).getStaticChildren()).collect(Collectors.toList()), false);
+                        if (destination == null) break;
 
-                            Rs2Widget.clickWidget(destination);
-                            sleepUntil(() -> !Rs2Player.isAnimating());
-                            sleepUntilTrue(() -> Rs2Player.getWorldLocation().distanceTo(transport.getDestination()) < 10);
-                            sleep(600 * 2); // wait 2 ticks befor einteracting, this is a delay of ships
-                        }
+                        Rs2Widget.clickWidget(destination);
+                        sleepUntil(() -> !Rs2Player.isAnimating());
+                        sleepUntilTrue(() -> Rs2Player.getWorldLocation().distanceTo(transport.getDestination()) < 10);
+                        sleep(600 * 4);
                     }
                     
                     if (transport.getType() == TransportType.CANOE) {
@@ -1306,8 +1309,8 @@ public static List<WorldPoint> getWalkPath(WorldPoint target) {
     private static void handleObject(Transport transport, TileObject tileObject) {
         System.out.println("tile object");
         Rs2GameObject.interact(tileObject, transport.getAction());
+        if (handleObjectExceptions(transport, tileObject)) return;
         if (transport.getDestination().getPlane() == Rs2Player.getWorldLocation().getPlane()) {
-            if (handleObjectExceptions(transport, tileObject)) return;
             if (transport.getType() == TransportType.AGILITY_SHORTCUT) {
                 Rs2Player.waitForAnimation();
                 sleepUntil(() -> Rs2Player.getWorldLocation().distanceTo(transport.getDestination()) <= 2, 10000);
@@ -1400,6 +1403,26 @@ public static List<WorldPoint> getWalkPath(WorldPoint target) {
             }
             Rs2Dialogue.sleepUntilInDialogue();
             Rs2Dialogue.clickOption("yes");
+            return true;
+        }
+        
+        // Handle Cave Entrance inside of Asgarnia Ice Caves
+        if (tileObject.getId() == ObjectID.TUNNEL_55988 || tileObject.getId() == ObjectID.TUNNEL_55989) {
+            Rs2Player.waitForAnimation();
+        }
+
+        // Handle Rev Cave Dialogue
+        if (tileObject.getId() == ObjectID.CAVERN_31555) {
+            if (Rs2Player.isMoving()) {
+                Rs2Player.waitForWalking();
+            }
+            Widget dialogueSprite = Rs2Dialogue.getDialogueSprite();
+            if (dialogueSprite != null && dialogueSprite.getItemId() == 1004) {
+                Rs2Dialogue.clickContinue();
+                Rs2Dialogue.sleepUntilSelectAnOption();
+                Rs2Dialogue.clickOption("Yes, don't ask again");
+                Rs2Dialogue.sleepUntilNotInDialogue();
+            }
             return true;
         }
         return false;
@@ -1505,30 +1528,39 @@ public static List<WorldPoint> getWalkPath(WorldPoint target) {
 
         if (itemAction == null) return false;
 
-        if (Rs2Inventory.interact(itemId, itemAction)) {
-            if (itemAction.equalsIgnoreCase("rub") && (itemId == ItemID.XERICS_TALISMAN || transport.getDisplayInfo().toLowerCase().contains("skills necklace"))) {
-                return interactWithAdventureLog(transport);
-            }
-            
-            if (itemAction.equalsIgnoreCase("rub") && transport.getDisplayInfo().toLowerCase().contains("burning amulet")) {
-                Rs2Dialogue.sleepUntilInDialogue();
-                Rs2Dialogue.clickOption(destination);
-                Rs2Dialogue.sleepUntilHasDialogueOption("Okay, teleport to level");
-                Rs2Dialogue.clickOption("Okay, teleport to level");
-            }
-            
-            if (itemAction.equalsIgnoreCase("teleport") && transport.getDisplayInfo().toLowerCase().contains("slayer ring")) {
-                Rs2Dialogue.sleepUntilSelectAnOption();
-                Rs2Dialogue.clickOption(destination);
-            }
+        // Check the first character of the item name, if it is a number return true
+        boolean hasMenuOption = !transport.getDisplayInfo().isEmpty() && Character.isDigit(transport.getDisplayInfo().charAt(0));
 
-            if (itemAction.equalsIgnoreCase("rub") || itemAction.equalsIgnoreCase("reminisce")) {
-                Rs2Dialogue.sleepUntilSelectAnOption();
-                Rs2Dialogue.clickOption(destination);
-            }
+        if (!hasMenuOption) {
+            if (Rs2Inventory.interact(itemId, itemAction)) {
+                if (itemAction.equalsIgnoreCase("rub") && (itemId == ItemID.XERICS_TALISMAN || transport.getDisplayInfo().toLowerCase().contains("skills necklace"))) {
+                    return interactWithAdventureLog(transport);
+                }
 
-            Microbot.log("Traveling to " + transport.getDisplayInfo());
-            return sleepUntilTrue(() -> Rs2Player.getWorldLocation().distanceTo2D(transport.getDestination()) < OFFSET, 100, 5000);
+                if (itemAction.equalsIgnoreCase("rub") && transport.getDisplayInfo().toLowerCase().contains("burning amulet")) {
+                    Rs2Dialogue.sleepUntilInDialogue();
+                    Rs2Dialogue.clickOption(destination);
+                    Rs2Dialogue.sleepUntilHasDialogueOption("Okay, teleport to level");
+                    Rs2Dialogue.clickOption("Okay, teleport to level");
+                }
+
+                if (itemAction.equalsIgnoreCase("teleport") && transport.getDisplayInfo().toLowerCase().contains("slayer ring")) {
+                    Rs2Dialogue.sleepUntilSelectAnOption();
+                    Rs2Dialogue.clickOption(destination);
+                }
+
+                if (itemAction.equalsIgnoreCase("rub") || itemAction.equalsIgnoreCase("reminisce")) {
+                    Rs2Dialogue.sleepUntilSelectAnOption();
+                    Rs2Dialogue.clickOption(destination);
+                }
+
+                Microbot.log("Traveling to " + transport.getDisplayInfo());
+                return sleepUntilTrue(() -> Rs2Player.getWorldLocation().distanceTo2D(transport.getDestination()) < OFFSET, 100, 5000);
+            }
+        }
+        else {
+            return interactWithNewRuneliteMenu(transport,itemId);
+
         }
 
         return false;
@@ -1656,9 +1688,9 @@ public static List<WorldPoint> getWalkPath(WorldPoint target) {
         }
         ShortestPathPlugin.setStartPointSet(true);
         if (Microbot.getClient().isClientThread()) {
-            Microbot.getClientThread().runOnSeperateThread(() -> restartPathfinding(start, ShortestPathPlugin.getPathfinder().getTarget()));
+            Microbot.getClientThread().runOnSeperateThread(() -> restartPathfinding(start, ShortestPathPlugin.getPathfinder().getTargets()));
         } else {
-            restartPathfinding(start, ShortestPathPlugin.getPathfinder().getTarget());
+            restartPathfinding(start, ShortestPathPlugin.getPathfinder().getTargets());
         }
     }
 
@@ -1679,31 +1711,16 @@ public static List<WorldPoint> getWalkPath(WorldPoint target) {
         // Get Transport Information
         String displayInfo = transport.getDisplayInfo();
         int objectId = transport.getObjectId();
-
         if (displayInfo == null || displayInfo.isEmpty()) return false;
 
-        // Check if the widget is already visible
-        if (!Rs2Widget.isHidden(ComponentID.ADVENTURE_LOG_CONTAINER)) {
-            System.out.println("Widget is already visible. Skipping interaction.");
-            char key = displayInfo.charAt(0);
-            Rs2Keyboard.keyPress(key);
-            Microbot.log("Pressing: " + key);
-            return false;
+        if (!Rs2Widget.isWidgetVisible(ComponentID.ADVENTURE_LOG_CONTAINER)) {
+            TileObject spiritTree = Rs2GameObject.findObjectById(objectId);
+            if (!Rs2GameObject.interact(spiritTree, "Travel")) {
+                return false;
+            }
         }
 
-        // Find the spirit tree object
-        TileObject spiritTree = Rs2GameObject.findObjectById(objectId);
-        if (spiritTree == null) {
-            return false;
-        }
-
-        // Interact with the spirit tree
-        if (Rs2GameObject.interact(spiritTree, "travel")) {
-            return interactWithAdventureLog(transport);
-        }
-
-        return false;
-
+        return interactWithAdventureLog(transport);
     }
 
     private static boolean handleMinigameTeleport(Transport transport) {
@@ -1924,7 +1941,7 @@ public static List<WorldPoint> getWalkPath(WorldPoint target) {
      *
      * @param transport
      */
-    private static boolean interactWithAdventureLog(Transport transport) {
+    private static boolean  interactWithAdventureLog(Transport transport) {
         if (transport.getDisplayInfo() == null || transport.getDisplayInfo().isEmpty()) return false;
 
         // Wait for the widget to become visible
@@ -1935,10 +1952,55 @@ public static List<WorldPoint> getWalkPath(WorldPoint target) {
             return false;
         }
 
-        char key = transport.getDisplayInfo().charAt(0);
-        Rs2Keyboard.keyPress(key);
+        String destinationString = transport.getDisplayInfo().replaceAll("^\\d+:\\s*", "");
+        Widget destinationWidget = Rs2Widget.findWidget(destinationString, List.of(Rs2Widget.getWidget(187, 3)));
+        if (destinationWidget == null) return false;
+
+        Rs2Widget.clickWidget(destinationWidget);
         Microbot.log("Traveling to " + transport.getDisplayInfo());
         return sleepUntilTrue(() -> Rs2Player.getWorldLocation().distanceTo2D(transport.getDestination()) < OFFSET, 100, 5000);
+    }
+
+    private static boolean interactWithNewRuneliteMenu(Transport transport,int itemId) {
+        if (transport.getDisplayInfo() == null || transport.getDisplayInfo().isEmpty()) return false;
+
+        int menuOption = transport.getDisplayInfo().charAt(0) - '0';
+        String[] values = transport.getDisplayInfo().split(":");
+        String destination = values[1].trim();
+        int identifier = NewMenuEntry.findIdentifier(menuOption, getIdentifierOffset(transport.getDisplayInfo()));
+        Rs2Inventory.interact(itemId, destination, identifier);
+        if (transport.getDisplayInfo().toLowerCase().contains("burning amulet")) {
+            Rs2Dialogue.sleepUntilHasDialogueOption("Okay, teleport to level");
+            Rs2Dialogue.clickOption("Okay, teleport to level");
+        }
+        Microbot.log("Traveling to " + transport.getDisplayInfo());
+        return sleepUntilTrue(() -> Rs2Player.getWorldLocation().distanceTo2D(transport.getDestination()) < OFFSET, 100, 5000);
+    }
+
+    private static int getIdentifierOffset(String itemName) {
+        String lowerCaseItemName = itemName.toLowerCase();
+        if (lowerCaseItemName.contains("ring of dueling") ||
+                lowerCaseItemName.contains("games necklace") ||
+                lowerCaseItemName.contains("skills necklace") ||
+                lowerCaseItemName.contains("amulet of glory") ||
+                lowerCaseItemName.contains("ring of wealth") ||
+                lowerCaseItemName.contains("combat bracelet") ||
+                lowerCaseItemName.contains("digsite pendant") ||
+                lowerCaseItemName.contains("necklace of passage") ||
+                lowerCaseItemName.contains("camulet") ||
+                lowerCaseItemName.contains("burning amulet")) {
+            return 6;
+        } else if (lowerCaseItemName.contains("xeric's talisman") ||
+                lowerCaseItemName.contains("slayer ring")) {
+            return 4;
+        } else if (lowerCaseItemName.contains("kharedst's memoirs") ||
+                   lowerCaseItemName.contains("giantsoul amulet")) {
+            return 3;
+        } else if (lowerCaseItemName.contains("enchanted lyre")) {
+            return 2;
+        } else {
+            return 4; // Default offset if no match is found
+        }
     }
 
     public static boolean handleGlider(Transport transport) {

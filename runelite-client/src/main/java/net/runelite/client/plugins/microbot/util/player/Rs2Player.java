@@ -14,15 +14,19 @@ import net.runelite.client.plugins.grounditems.GroundItemsPlugin;
 import net.runelite.client.plugins.microbot.Microbot;
 import net.runelite.client.plugins.microbot.globval.VarbitValues;
 import net.runelite.client.plugins.microbot.globval.enums.InterfaceTab;
+import net.runelite.client.plugins.microbot.util.ActorModel;
 import net.runelite.client.plugins.microbot.util.coords.Rs2WorldPoint;
 import net.runelite.client.plugins.microbot.util.equipment.Rs2Equipment;
 import net.runelite.client.plugins.microbot.util.gameobject.Rs2GameObject;
+import net.runelite.client.plugins.microbot.util.grounditem.Rs2GroundItem;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2ItemModel;
 import net.runelite.client.plugins.microbot.util.math.Rs2Random;
 import net.runelite.client.plugins.microbot.util.menu.NewMenuEntry;
+import net.runelite.client.plugins.microbot.util.misc.Rs2Food;
 import net.runelite.client.plugins.microbot.util.misc.Rs2Potion;
 import net.runelite.client.plugins.microbot.util.misc.Rs2UiHelper;
+import net.runelite.client.plugins.microbot.util.npc.Rs2Npc;
 import net.runelite.client.plugins.microbot.util.npc.Rs2NpcModel;
 import net.runelite.client.plugins.microbot.util.security.Login;
 import net.runelite.client.plugins.microbot.util.tabs.Rs2Tab;
@@ -53,6 +57,7 @@ public class Rs2Player {
     private static int divineRangedTime = -1;
     private static int divineBastionTime = -1;
     private static int divineCombatTime = -1;
+    private static int divineMagicTime = -1;
     public static int antiVenomTime = -1;
     public static int staminaBuffTime = -1;
     public static int antiPoisonTime = -1;
@@ -92,6 +97,10 @@ public class Rs2Player {
         return divineCombatTime > 0;
     }
 
+    public static boolean hasDivineMagicActive() {
+        return divineMagicTime > 0;
+    }
+
     public static boolean hasGoadingActive() {
         return goadingTime > 0;
     }
@@ -108,6 +117,9 @@ public class Rs2Player {
         return Microbot.getClient().getBoostedSkillLevel(Skill.DEFENCE) - threshold > Microbot.getClient().getRealSkillLevel(Skill.DEFENCE);
     }
 
+    public static boolean hasMagicActive(int threshold) {
+        return Microbot.getClient().getBoostedSkillLevel(Skill.MAGIC) - threshold > Microbot.getClient().getRealSkillLevel(Skill.MAGIC);
+    }
 
     public static boolean hasAntiVenomActive() {
         if (Rs2Equipment.isWearing("serpentine helm")) {
@@ -150,6 +162,9 @@ public class Rs2Player {
         }
         if (event.getVarbitId() == Varbits.BUFF_GOADING_POTION) {
             goadingTime = event.getValue();
+        }
+        if (event.getVarbitId() == Varbits.DIVINE_MAGIC) {
+            divineMagicTime = event.getValue();
         }
         if (event.getVarpId() == VarPlayer.POISON) {
             if (event.getValue() >= VENOM_VALUE_CUTOFF) {
@@ -555,17 +570,60 @@ public class Rs2Player {
 
     /**
      * Consumes food when the player's health percentage falls below the specified threshold.
-     * The method searches the inventory for the first available food item.
+     * Uses default food consumption behavior.
      *
      * @param percentage The health percentage at which food should be consumed.
      * @return {@code true} if food was consumed, {@code false} if no action was taken.
      */
     public static boolean eatAt(int percentage) {
+        // Call the full method with a default value of false for fastFood
+        return eatAt(percentage, false);
+    }
+
+    /**
+     * Consumes food when the player's health percentage falls below the specified threshold.
+     * The method searches the inventory for the first available food item.
+     *
+     * @param percentage The health percentage at which food should be consumed.
+     * @param fastFood If true, prioritize faster food consumption behavior.
+     * @return {@code true} if food was consumed, {@code false} if no action was taken.
+     */
+    public static boolean eatAt(int percentage, boolean fastFood) {
         double threshold = getHealthPercentage();
         if (threshold <= percentage) {
-            return useFood();
+            if (fastFood && fastFoodPresent()) {
+                return useFastFood(); // hypothetical fast food consuming method
+            }
+            return useFood(); // default method
         }
         return false;
+    }
+
+    /**
+     * Consumes the first available high-priority food item from the player's inventory.
+     *
+     * <p>Only food items defined in {@link Rs2Food} with a priority of {@code 1} are considered fast food.</p>
+     * <p>This method ignores noted items and will not attempt to drink items like Jug of Wine.</p>
+     *
+     * @return {@code true} if a fast food item was consumed, {@code false} if none were found.
+     */
+    public static boolean useFastFood() {
+        List<Rs2ItemModel> foods = Rs2Inventory.getInventoryFood();
+        if (foods.isEmpty()) return false;
+
+        Optional<Rs2ItemModel> food = foods.stream()
+                .filter(rs2Item -> !rs2Item.isNoted())
+                .filter(rs2Item -> Rs2Food.getIds().contains(rs2Item.getId()))
+                .filter(rs2Item -> {
+                    for (Rs2Food f : Rs2Food.values()) {
+                        if (f.getId() == rs2Item.getId() && f.getTickdelay() == 1) return true;
+                    }
+                    return false;
+                })
+                .findFirst();
+
+        return food.filter(rs2ItemModel -> Rs2Inventory.interact(rs2ItemModel, "eat")).isPresent();
+
     }
 
     /**
@@ -1105,7 +1163,7 @@ public class Rs2Player {
         int threshold = maxPrayer - restoreAmount;
         int randomizedThreshold = Rs2Random.randomGaussian(threshold - 5, 3);
         randomizedThreshold = Math.min(randomizedThreshold, threshold);
-        System.out.println("Threshold: " + randomizedThreshold);
+        //System.out.println("Threshold: " + randomizedThreshold);
 
         return drinkPrayerPotionAt(randomizedThreshold);
     }
@@ -1337,6 +1395,18 @@ public class Rs2Player {
     }
 
     /**
+     * Calculates the player's current prayer level as a percentage of their base prayer level.
+     *
+     * @return a value between 0 and 100 representing the percentage of prayer remaining.
+     */
+    public static int getPrayerPercentage() {
+        int current = Microbot.getClient().getBoostedSkillLevel(Skill.PRAYER);
+        int base = Microbot.getClient().getRealSkillLevel(Skill.PRAYER);
+
+        return (int) ((current / (double) base) * 100);
+    }
+
+    /**
      * Checks if the player is currently standing on a game object.
      *
      * @return {@code true} if a game object exists at the player's current location, {@code false} otherwise.
@@ -1354,7 +1424,7 @@ public class Rs2Player {
      */
     public static boolean isStandingOnGroundItem() {
         WorldPoint playerPoint = getWorldLocation();
-        return GroundItemsPlugin.getCollectedGroundItems().values().stream().anyMatch(x -> x.getLocation().equals(playerPoint));
+        return Rs2GroundItem.getGroundItems().values().stream().anyMatch(x -> x.getLocation().equals(playerPoint));
     }
 
     /**
@@ -1826,15 +1896,19 @@ public class Rs2Player {
      *         or if the local player is null, it returns null.
      */
     public static Actor getInteracting() {
-        if (Microbot.getClient().getLocalPlayer() == null) return null;
+        Optional<Actor> result = Microbot.getClientThread().runOnClientThreadOptional(() -> {
+            if (Microbot.getClient().getLocalPlayer() == null) return null;
 
-        var interactingActor = Microbot.getClient().getLocalPlayer().getInteracting();
+            var interactingActor = Microbot.getClient().getLocalPlayer().getInteracting();
 
-        if (interactingActor instanceof net.runelite.api.NPC) {
-            return new Rs2NpcModel((NPC) interactingActor);
-        }
+            if (interactingActor instanceof net.runelite.api.NPC) {
+                return new Rs2NpcModel((NPC) interactingActor);
+            }
 
-        return interactingActor;
+            return interactingActor;
+        });
+
+        return result.orElse(null);
     }
     /**
      * Checks if the player has finished Tutorial Island.
@@ -1846,5 +1920,30 @@ public class Rs2Player {
      */
     public static boolean isInTutorialIsland() {
         return Microbot.getVarbitPlayerValue(281) >= 1000;
+    }
+
+    /**
+     * Checks if there is any fast food available in the player's inventory.
+     *
+     * <p>Fast food is defined as food with a {@code tickDelay} of 1 in {@link Rs2Food}.</p>
+     * <p>Noted items are ignored.</p>
+     *
+     * @return {@code true} if at least one fast food item is found, {@code false} otherwise.
+     */
+    public static boolean fastFoodPresent() {
+        List<Rs2ItemModel> foods = Rs2Inventory.getInventoryFood();
+        if (foods.isEmpty()) return false;
+
+        return foods.stream()
+                .filter(rs2Item -> !rs2Item.isNoted())
+                .filter(rs2Item -> Rs2Food.getIds().contains(rs2Item.getId()))
+                .anyMatch(rs2Item -> {
+                    for (Rs2Food food : Rs2Food.values()) {
+                        if (food.getId() == rs2Item.getId() && food.getTickdelay() == 1) {
+                            return true;
+                        }
+                    }
+                    return false;
+                });
     }
 }

@@ -71,7 +71,7 @@ public class ThievingScript extends Script {
                 wearDodgyNecklace();
                 pickpocket();
             } catch (Exception ex) {
-                System.out.println(ex.getMessage());
+                Microbot.logStackTrace(this.getClass().getSimpleName(), ex);
             }
         }, 0, 600, TimeUnit.MILLISECONDS);
         return true;
@@ -139,7 +139,7 @@ public class ThievingScript extends Script {
     }
 
     private void pickpocket() {
-        WorldArea ardougneArea = new WorldArea(2649, 3280, 15, 15, 0);
+        WorldArea ardougneArea = new WorldArea(2649, 3280, 7, 8, 0);
         Map<NPC, HighlightedNpc> highlightedNpcs = new HashMap<>();
 
         try {

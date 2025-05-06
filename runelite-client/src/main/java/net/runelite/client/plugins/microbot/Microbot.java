@@ -23,15 +23,18 @@ import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.NPCManager;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.game.WorldService;
+import net.runelite.client.input.MouseManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginInstantiationException;
 import net.runelite.client.plugins.PluginManager;
+import net.runelite.client.plugins.loottracker.LootTrackerItem;
 import net.runelite.client.plugins.loottracker.LootTrackerPlugin;
 import net.runelite.client.plugins.loottracker.LootTrackerRecord;
 import net.runelite.client.plugins.microbot.configs.SpecialAttackConfigs;
 import net.runelite.client.plugins.microbot.dashboard.PluginRequestModel;
 import net.runelite.client.plugins.microbot.qualityoflife.scripts.pouch.PouchScript;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2ItemModel;
+import net.runelite.client.plugins.microbot.util.item.Rs2ItemManager;
 import net.runelite.client.plugins.microbot.util.menu.NewMenuEntry;
 import net.runelite.client.plugins.microbot.util.misc.Rs2UiHelper;
 import net.runelite.client.plugins.microbot.util.mouse.Mouse;
@@ -49,10 +52,7 @@ import javax.inject.Inject;
 import javax.swing.Timer;
 import javax.swing.*;
 import java.awt.*;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
 import java.lang.reflect.Field;
 import java.time.Duration;
 import java.time.Instant;
@@ -85,6 +85,10 @@ public class Microbot {
     public static boolean enableAutoRunOn = true;
     public static boolean useStaminaPotsIfNeeded = true;
     public static int runEnergyThreshold = 1000;
+    @Getter
+    @Setter
+    @Inject
+    public static MouseManager mouseManager;
     @Getter
     @Setter
     public static NaturalMouse naturalMouse;
@@ -163,6 +167,11 @@ public class Microbot {
 
     @Getter
     public static HashMap<String, Integer> scriptRuntimes = new HashMap<>();
+
+    @Getter
+    @Setter
+    public static Rs2ItemManager rs2ItemManager;
+
 
     public static boolean loggedIn = false;
 
@@ -458,6 +467,38 @@ public class Microbot {
                 .orElse(null);
     }
 
+    /**
+     * Calculates the total GE value of loot records for a specific NPC.
+     * This method uses reflection to access private methods and fields of the LootTrackerItem class.
+     * @param npcName name of the npc to get the loot records for
+     * @return total GE value of the loot records
+     */
+    public static long getAggregateLootRecordsTotalGevalue(String npcName) {
+        LootTrackerRecord record = getAggregateLootRecords(npcName);
+        if (record == null) return 0;
+
+        long totalGeValue = 0;
+        try {
+            LootTrackerItem[] items = record.getItems();
+            for (LootTrackerItem item : items) {;
+                totalGeValue += item.getTotalGePrice();
+            }
+        } catch (Exception e) {
+            log.error("Error calculating total GE value", e);
+        }
+
+        return totalGeValue;
+    }
+
+    /**
+     * Logs the stack trace of an exception to the console and chat.
+     * @param scriptName
+     * @param e
+     */
+    public static void logStackTrace(String scriptName, Exception e) {
+        log(scriptName, Level.ERROR, e);
+    }
+
     public static void log(String message) {
         log(message, Level.INFO);
     }
@@ -471,6 +512,10 @@ public class Microbot {
     }
 
     public static void log(String message, Level level) {
+        log(message, level, null);
+    }
+
+    public static void log(String message, Level level, Exception ex) {
         if (message == null || message.isEmpty()) return;
         if (level == null) return;
 
@@ -479,7 +524,11 @@ public class Microbot {
                 log.warn(message);
                 break;
             case ERROR:
-                log.error(message);
+                if (ex != null) {
+                    log.error(message, ex);
+                } else {
+                    log.error(message);
+                }
                 break;
             case DEBUG:
                 log.debug(message);
@@ -492,11 +541,13 @@ public class Microbot {
         if (Microbot.isLoggedIn()) {
             if (level == Level.DEBUG && !isDebug()) return;
 
+            final String _message = ex == null ? message : ex.getMessage();
+
             LocalTime currentTime = LocalTime.now();
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm:ss");
             String formattedTime = currentTime.format(formatter);
             Microbot.getClientThread().runOnClientThreadOptional(() ->
-                    Microbot.getClient().addChatMessage(ChatMessageType.ENGINE, "", "[" + formattedTime + "]: " + message, "", false)
+                    Microbot.getClient().addChatMessage(ChatMessageType.ENGINE, "", "[" + formattedTime + "]: " +  _message, "", false)
             );
         }
     }

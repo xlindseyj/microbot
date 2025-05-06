@@ -8,7 +8,10 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.microbot.Microbot;
-import net.runelite.client.plugins.microbot.pluginscheduler.event.ScheduledStopEvent;
+import net.runelite.client.plugins.microbot.pluginscheduler.api.SchedulablePlugin;
+import net.runelite.client.plugins.microbot.pluginscheduler.condition.logical.AndCondition;
+import net.runelite.client.plugins.microbot.pluginscheduler.condition.logical.LogicalCondition;
+import net.runelite.client.plugins.microbot.pluginscheduler.event.PluginScheduleEntrySoftStopEvent;
 import net.runelite.client.ui.overlay.OverlayManager;
 
 import javax.inject.Inject;
@@ -19,10 +22,9 @@ import java.awt.*;
         name = PluginDescriptor.Mocrosoft + "Herb runner",
         description = "Herb runner",
         tags = {"herb", "farming", "money making", "skilling"},
-        enabledByDefault = false,
-        canBeScheduled = true
+        enabledByDefault = false
 )
-public class HerbrunPlugin extends Plugin {
+public class HerbrunPlugin extends Plugin implements SchedulablePlugin{
     @Inject
     private HerbrunConfig config;
     @Provides
@@ -39,7 +41,8 @@ public class HerbrunPlugin extends Plugin {
     HerbrunScript herbrunScript;
 
     static String status;
-
+    private LogicalCondition stopCondition = new AndCondition();
+    
 
     @Override
     protected void startUp() throws AWTException {
@@ -55,10 +58,15 @@ public class HerbrunPlugin extends Plugin {
     }
 
     @Subscribe
-    public void onScheduledStopEvent(ScheduledStopEvent event) {
+    public void onPluginScheduleEntrySoftStopEvent(PluginScheduleEntrySoftStopEvent event) {
         if (event.getPlugin() == this) {
             Microbot.stopPlugin(this);
         }
+    }
+     @Override     
+    public LogicalCondition getStopCondition() {
+        // Create a new stop condition        
+        return this.stopCondition;
     }
 
 }
