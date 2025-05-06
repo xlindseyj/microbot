@@ -3,6 +3,7 @@ package net.runelite.client.plugins.microbot.GeoffPlugins.construction2;
 import com.google.inject.Provides;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.Skill;
 import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
@@ -17,9 +18,9 @@ import javax.inject.Inject;
 import java.awt.*;
 
 @PluginDescriptor(
-        name = PluginDescriptor.Geoff + "Construction 2",
-        description = "Geoff's Microbot construction plugin with added new bits.",
-        tags = {"skilling", "microbot", "construction"},
+        name = PluginDescriptor.Kromite + "KConstruction",
+        description = "Kromite's construction plugin.",
+        tags = {"skilling", "kromite", "microbot", "construction", "poh", "house"},
         enabledByDefault = false
 )
 @Slf4j
@@ -67,5 +68,33 @@ public class Construction2Plugin extends Plugin {
 
     public Construction2State getState() {
         return construction2Script.getState();
+    }
+
+    public String getCurrentLevel() {
+        return String.valueOf(client.getRealSkillLevel(Skill.CONSTRUCTION));
+    }
+
+//    public String getExperiencePerHour() {
+//        return construction2Script.getExperiencePerHour();
+//    }
+
+    public String getCurrentExperience() {
+        return String.valueOf(client.getSkillExperience(Skill.CONSTRUCTION));
+    }
+
+//    public String getNextLevelExperience() {
+//        return String.valueOf(Skill.CONSTRUCTION.getExperienceForLevel(client.getRealSkillLevel(Skill.CONSTRUCTION) + 1));
+//    }
+
+    public String getNextLevel() {
+        return String.valueOf(client.getRealSkillLevel(Skill.CONSTRUCTION) + 1);
+    }
+
+    public int getConstructionLevel() {
+        return client.getRealSkillLevel(Skill.CONSTRUCTION);
+    }
+
+    public int getConstructionExperience() {
+        return client.getSkillExperience(Skill.CONSTRUCTION);
     }
 }

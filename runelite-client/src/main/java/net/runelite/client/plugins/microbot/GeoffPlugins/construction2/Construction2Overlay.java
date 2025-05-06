@@ -34,6 +34,20 @@ public class Construction2Overlay extends OverlayPanel {
                 .right(plugin.getState().toString())
                 .build());
 
+        // Display the current action
+
+        // Display EXP gained
+
+        // Display EXP to level up
+
+        // Display EXP per hour
+
+        // Display the current level
+        panelComponent.getChildren().add(LineComponent.builder()
+                .left("Level:")
+                .right(String.valueOf(plugin.getCurrentLevel()))
+                .build());
+
         return super.render(graphics);
     }
 }

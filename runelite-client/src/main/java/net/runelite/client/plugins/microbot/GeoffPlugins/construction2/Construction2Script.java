@@ -5,6 +5,9 @@ import net.runelite.api.widgets.Widget;
 import net.runelite.client.plugins.microbot.Microbot;
 import net.runelite.client.plugins.microbot.Script;
 import net.runelite.client.plugins.microbot.GeoffPlugins.construction2.enums.Construction2State;
+import net.runelite.client.plugins.microbot.util.antiban.Rs2Antiban;
+import net.runelite.client.plugins.microbot.util.antiban.Rs2AntibanSettings;
+import net.runelite.client.plugins.microbot.util.antiban.enums.Activity;
 import net.runelite.client.plugins.microbot.util.dialogues.Rs2Dialogue;
 import net.runelite.client.plugins.microbot.util.gameobject.Rs2GameObject;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
@@ -14,8 +17,6 @@ import net.runelite.client.plugins.microbot.util.npc.Rs2Npc;
 import net.runelite.client.plugins.microbot.util.npc.Rs2NpcModel;
 import net.runelite.client.plugins.microbot.util.tabs.Rs2Tab;
 import net.runelite.client.plugins.microbot.util.widget.Rs2Widget;
-import net.runelite.client.plugins.microbot.util.mouse.Mouse;
-import net.runelite.client.plugins.microbot.util.mouse.VirtualMouse;
 
 import java.awt.event.KeyEvent;
 import java.util.concurrent.TimeUnit;
@@ -26,6 +27,10 @@ public class Construction2Script extends Script {
     private static final int DEFAULT_DELAY = 600;
     private static final int HUMAN_IDLE_BREAK_CHANCE = 8; // ~12.5% chance
     private static final int MOUSE_OFFSCREEN_CHANCE = 5;  // ~20% chance
+
+    private long startTime;
+    private long endTime;
+    private int currentXp;
 
     private final Random random = new Random();
     private Construction2State state = Construction2State.Idle;
@@ -108,8 +113,49 @@ public class Construction2Script extends Script {
         return Rs2Widget.findWidget("Really remove it?", null) != null;
     }
 
+//    public String getExperiencePerHour() {
+//        if (endTime == 0) {
+//            endTime = System.currentTimeMillis();
+//        }
+//        long elapsedTime = endTime - startTime;
+//        int xpGained = currentXp - Rs2GameObject.getExperience(Skill.CONSTRUCTION);
+//        return String.format("%,d", (int) ((xpGained * 3600000L) / elapsedTime));
+//    }
+
     public boolean run(Construction2Config config) {
+        startTime = System.currentTimeMillis();
         int actionDelay = config.useCustomDelay() ? config.actionDelay() : DEFAULT_DELAY;
+        boolean useAntiban = config.useAntiban();
+
+        if (useAntiban) {
+            /**
+             * Applies the antiban setup tailored for construction activities.
+             * This setup focuses on mimicking human-like behaviors during construction tasks.
+             */
+            Rs2AntibanSettings.antibanEnabled = true;
+            Rs2AntibanSettings.usePlayStyle = true;
+            Rs2AntibanSettings.randomIntervals = false;
+            Rs2AntibanSettings.simulateFatigue = true;
+            Rs2AntibanSettings.simulateAttentionSpan = true;
+            Rs2AntibanSettings.behavioralVariability = true;
+            Rs2AntibanSettings.nonLinearIntervals = true;
+            Rs2AntibanSettings.profileSwitching = true;
+            Rs2AntibanSettings.timeOfDayAdjust = false;
+            Rs2AntibanSettings.simulateMistakes = true;
+            Rs2AntibanSettings.naturalMouse = true;
+            Rs2AntibanSettings.contextualVariability = true;
+            Rs2AntibanSettings.dynamicIntensity = false;
+            Rs2AntibanSettings.dynamicActivity = false;
+            Rs2AntibanSettings.devDebug = true;
+            Rs2AntibanSettings.takeMicroBreaks = true;
+            Rs2AntibanSettings.playSchedule = true;
+            Rs2AntibanSettings.universalAntiban = false;
+            Rs2AntibanSettings.microBreakDurationLow = 3;
+            Rs2AntibanSettings.microBreakDurationHigh = 8;
+            Rs2AntibanSettings.actionCooldownChance = 1.00;
+            Rs2AntibanSettings.microBreakChance = 0.05;
+            Rs2Antiban.setActivity(Activity.GENERAL_CONSTRUCTION);
+        }
 
         mainScheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(() -> {
             try {
@@ -131,6 +177,8 @@ public class Construction2Script extends Script {
                         break;
                 }
             } catch (Exception ex) {
+                endTime = System.currentTimeMillis();
+                System.out.println("Ran for: " + (endTime - startTime) / 1000 + " seconds");
                 System.out.println("Error in scheduled task: " + ex.getMessage());
             }
         }, 0, actionDelay, TimeUnit.MILLISECONDS);
@@ -143,7 +191,7 @@ public class Construction2Script extends Script {
     }
 
     private void calculateState(Construction2Config config) {
-        boolean hasRequiredPlanks = Rs2Inventory.hasItemAmount(config.selectedMode().getPlankItemId(), Rs2Random.between(8, 16));
+        boolean hasRequiredPlanks = Rs2Inventory.hasItemAmount(config.selectedMode().getPlankItemId(), Rs2Random.between(6, 18));
 
         TileObject space = null;
         TileObject builtObject = null;
@@ -178,7 +226,7 @@ public class Construction2Script extends Script {
             state = Construction2State.Butler;
         } else if (space == null && builtObject == null) {
             state = Construction2State.Idle;
-            Microbot.getNotifier().notify("Looks like we are no longer in our house.");
+            Microbot.getNotifier().notify("Looks like we are no longer in your house.");
             shutdown();
         }
     }
@@ -213,7 +261,7 @@ public class Construction2Script extends Script {
             System.out.println("Interacted with build space: " + space.getId());
             sleepUntilOnClientThread(this::hasFurnitureInterfaceOpen, 2500);
             System.out.println("Pressing key: " + buildKey);
-            Rs2Keyboard.keyPress(buildKey); // Ensure this is the correct key for the selected build option
+            Rs2Keyboard.keyPress(buildKey);
             sleepUntilOnClientThread(() -> getBuiltObject(config) != null, 2500);
             System.out.println("Built object: " + config.selectedMode());
         } else {
@@ -343,13 +391,6 @@ public class Construction2Script extends Script {
             // return getGuildTrophySpace();
             default:
                 return null;
-        }
-    }
-
-    private void possiblyTakeIdleBreak() {
-        if (random.nextInt(100) < HUMAN_IDLE_BREAK_CHANCE) {
-            System.out.println("Taking human-like idle break...");
-            sleep(Rs2Random.between(3000, 12000));
         }
     }
 

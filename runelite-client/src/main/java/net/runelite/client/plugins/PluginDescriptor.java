@@ -49,6 +49,7 @@ public @interface PluginDescriptor
     String Vince = "<html>[<font color=#5bffe4>V</font>] ";
     String Basm = "<html>[<font color=#b3b3b3>W</font>] ";
     String Geoff = "<html>[<font color=#ffbc03>G</font>] ";
+	String Kromite = "<html>[<font color=#000000>K</font>] ";
     String Bttqjs = "<html>[<font color=#e57373>J</font>] ";
     String zuk = "<html>[<font color=#5F9596>Z</font>] ";
     String GZ = "<html>[<font color=#0077B6>\u2728</font>] ";
