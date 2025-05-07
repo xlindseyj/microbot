@@ -95,6 +95,15 @@ public class Rs2AntibanSettings {
     public static boolean devDebug = false;
     public static boolean overwriteScriptSettings = false;
 
+    // New enhanced antiban settings
+    public static boolean randomTabChecks = false; // Occasionally check different tabs
+    public static boolean simulateAfkBreaks = false; // Simulate brief AFK periods
+    public static boolean reactionVariability = false; // Vary reaction times based on context
+    public static double cameraMovementFrequency = 0.15; // How often to move the camera randomly
+    public static double mouseHoverProbability = 0.08; // How often to hover over elements
+    public static double examineObjectProbability = 0.05; // How often to examine objects
+    public static double distractionProbability = 0.03; // How often to simulate distractions
+
     public static boolean takeMicroBreaks = false; // will take micro breaks lasting 3-15 minutes at random intervals by default.
     public static boolean playSchedule = false; //TODO: Implement this
     public static boolean universalAntiban = false; // Will attempt to use the same antiban settings for all plugins that has not yet implemented their own antiban settings.
@@ -135,5 +144,14 @@ public class Rs2AntibanSettings {
         microBreakChance = 0.1;
         moveMouseRandomlyChance = 0.1;
         moveMouseOffScreenChance = 0.1;
+
+        // Reset new enhanced settings
+        randomTabChecks = false;
+        simulateAfkBreaks = false;
+        reactionVariability = false;
+        cameraMovementFrequency = 0.15;
+        mouseHoverProbability = 0.08;
+        examineObjectProbability = 0.05;
+        distractionProbability = 0.03;
     }
 }
