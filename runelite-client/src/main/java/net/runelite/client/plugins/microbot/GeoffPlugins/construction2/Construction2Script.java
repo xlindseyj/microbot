@@ -122,38 +122,40 @@ public class Construction2Script extends Script {
 //        return String.format("%,d", (int) ((xpGained * 3600000L) / elapsedTime));
 //    }
 
+    public void applyAntibanSettings() {
+        Rs2Antiban.resetAntibanSettings();
+        Rs2AntibanSettings.antibanEnabled = true;
+        Rs2AntibanSettings.usePlayStyle = true;
+        Rs2AntibanSettings.randomIntervals = false;
+        Rs2AntibanSettings.simulateFatigue = true;
+        Rs2AntibanSettings.simulateAttentionSpan = true;
+        Rs2AntibanSettings.behavioralVariability = true;
+        Rs2AntibanSettings.nonLinearIntervals = true;
+        Rs2AntibanSettings.profileSwitching = true;
+        Rs2AntibanSettings.timeOfDayAdjust = false;
+        Rs2AntibanSettings.simulateMistakes = true;
+        Rs2AntibanSettings.naturalMouse = true;
+        Rs2AntibanSettings.contextualVariability = true;
+        Rs2AntibanSettings.dynamicIntensity = false;
+        Rs2AntibanSettings.dynamicActivity = false;
+        Rs2AntibanSettings.devDebug = true;
+        Rs2AntibanSettings.takeMicroBreaks = true;
+        Rs2AntibanSettings.playSchedule = true;
+        Rs2AntibanSettings.universalAntiban = false;
+        Rs2AntibanSettings.moveMouseOffScreen = true;
+        Rs2AntibanSettings.microBreakDurationLow = 1;
+        Rs2AntibanSettings.microBreakDurationHigh = 3;
+        Rs2AntibanSettings.actionCooldownChance = 1.00;
+        Rs2AntibanSettings.microBreakChance = 0.05;
+    }
+
     public boolean run(Construction2Config config) {
         startTime = System.currentTimeMillis();
         int actionDelay = config.useCustomDelay() ? config.actionDelay() : DEFAULT_DELAY;
         boolean useAntiban = config.useAntiban();
 
         if (useAntiban) {
-            /**
-             * Applies the antiban setup tailored for construction activities.
-             * This setup focuses on mimicking human-like behaviors during construction tasks.
-             */
-            Rs2AntibanSettings.antibanEnabled = true;
-            Rs2AntibanSettings.usePlayStyle = true;
-            Rs2AntibanSettings.randomIntervals = false;
-            Rs2AntibanSettings.simulateFatigue = true;
-            Rs2AntibanSettings.simulateAttentionSpan = true;
-            Rs2AntibanSettings.behavioralVariability = true;
-            Rs2AntibanSettings.nonLinearIntervals = true;
-            Rs2AntibanSettings.profileSwitching = true;
-            Rs2AntibanSettings.timeOfDayAdjust = false;
-            Rs2AntibanSettings.simulateMistakes = true;
-            Rs2AntibanSettings.naturalMouse = true;
-            Rs2AntibanSettings.contextualVariability = true;
-            Rs2AntibanSettings.dynamicIntensity = false;
-            Rs2AntibanSettings.dynamicActivity = false;
-            Rs2AntibanSettings.devDebug = true;
-            Rs2AntibanSettings.takeMicroBreaks = true;
-            Rs2AntibanSettings.playSchedule = true;
-            Rs2AntibanSettings.universalAntiban = false;
-            Rs2AntibanSettings.microBreakDurationLow = 3;
-            Rs2AntibanSettings.microBreakDurationHigh = 8;
-            Rs2AntibanSettings.actionCooldownChance = 1.00;
-            Rs2AntibanSettings.microBreakChance = 0.05;
+            applyAntibanSettings();
             Rs2Antiban.setActivity(Activity.GENERAL_CONSTRUCTION);
         }
 
