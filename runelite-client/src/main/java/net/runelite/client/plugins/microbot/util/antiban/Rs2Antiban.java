@@ -555,4 +555,10 @@ public class Rs2Antiban {
         Rs2Antiban.category = null;
     }
 
+    public static void performRandomMouseMovement() {
+        if (Rs2AntibanSettings.moveMouseRandomly && Rs2Random.diceFractional(Rs2AntibanSettings.moveMouseRandomlyChance)) {
+            Rs2Random.wait(100, 200);
+            moveMouseRandomly();
+        }
+    }
 }
