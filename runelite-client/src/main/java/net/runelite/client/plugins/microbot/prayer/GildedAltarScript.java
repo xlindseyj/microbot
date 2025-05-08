@@ -1,6 +1,8 @@
 package net.runelite.client.plugins.microbot.prayer;
 
+import net.runelite.api.Experience;
 import net.runelite.api.ObjectID;
+import net.runelite.api.Skill;
 import net.runelite.api.TileObject;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.widgets.Widget;
@@ -27,6 +29,17 @@ public class GildedAltarScript extends Script {
     public Widget targetWidget;
     public String houseOwner;
 
+    public static int startingExp = 0;
+    public static int currentExp = 0;
+
+    public static int startingLevel = 0;
+    public static int currentLevel = 0;
+
+    public static int startingBones = 0;
+    public static int currentBones = 0;
+
+    public static long startTime = 0;
+
     public WorldPoint portalCoords;
     public WorldPoint altarCoords;
     public Boolean usePortal;
@@ -35,6 +48,64 @@ public class GildedAltarScript extends Script {
 
 
     public static GildedAltarPlayerState state = GildedAltarPlayerState.IDLE;
+
+    public static int getPrayerLevel() {
+        int prayerLevel = Microbot.getClient().getRealSkillLevel(Skill.PRAYER);
+        if (prayerLevel == 0) {
+            return 1;
+        }
+        return prayerLevel;
+    }
+
+    public static String getExperiencePerHour(int startingExp, int currentExp) {
+        long timeElapsed = System.currentTimeMillis() - startTime;
+        if (timeElapsed <= 0) return "0 xp/h";
+
+        double hoursElapsed = timeElapsed / 3600000.0;
+        int expGained = Microbot.getClient().getSkillExperience(Skill.PRAYER) - startingExp;
+        int expPerHour = (int)(expGained / hoursElapsed);
+
+        return expPerHour + " xp/h";
+    }
+
+    public static int getBonesPerHour(int startingBones, int currentBones) {
+        long timeElapsed = System.currentTimeMillis() - startTime;
+        if (timeElapsed <= 0) return 0;
+
+        double hoursElapsed = timeElapsed / 3600000.0;
+        int bonesUsed = currentBones - startingBones;
+
+        return (int)(bonesUsed / hoursElapsed);
+    }
+
+    public static String getTimeUntilLevel(int startingLevel, int currentLevel) {
+        int currentExp = Microbot.getClient().getSkillExperience(Skill.PRAYER);
+        int nextLevelExp = Experience.getXpForLevel(currentLevel + 1);
+        int expNeeded = nextLevelExp - currentExp;
+
+        long timeElapsed = System.currentTimeMillis() - startTime;
+        if (timeElapsed <= 0) return "Unknown";
+
+        int expGained = currentExp - startingExp;
+        if (expGained <= 0) return "Unknown";
+
+        double expPerMillis = expGained / (double)timeElapsed;
+        long millisRemaining = (long)(expNeeded / expPerMillis);
+
+        long hours = millisRemaining / 3600000;
+        long minutes = (millisRemaining % 3600000) / 60000;
+
+        return hours + "h " + minutes + "m";
+    }
+
+    public static String getRuntime(long startTime) {
+        long elapsed = System.currentTimeMillis() - startTime;
+        long hours = elapsed / 3600000;
+        long minutes = (elapsed % 3600000) / 60000;
+        long seconds = (elapsed % 60000) / 1000;
+
+        return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+    }
 
     private boolean inHouse() {
         return Rs2Npc.getNpc("Phials") == null;
@@ -127,8 +198,7 @@ public class GildedAltarScript extends Script {
         Rs2Tab.switchToSettingsTab();
         sleep(1200);
 
-
-        //If the house options button is not visible, player is on Display or Sound settings, need to click Controls.
+        // If the house options button is not visible, player is on Display or Sound settings, need to click Controls.
         String[] actions = Rs2Widget.getWidget(7602235).getActions(); // 116.59
         boolean isControlsInterfaceVisible = actions != null && actions.length == 0;
         if (!isControlsInterfaceVisible) {
@@ -235,7 +305,7 @@ public class GildedAltarScript extends Script {
     }
 
     public void bonesOnAltar() {
-        if(portalCoords == null){
+        if (portalCoords == null){
             portalCoords = Rs2Player.getWorldLocation();
         }
 
@@ -254,11 +324,11 @@ public class GildedAltarScript extends Script {
         Rs2Player.waitForAnimation();
 
         // Use bones on the altar if it's valid
-        if(altarCoords == null){
+        if (altarCoords == null){
             altarCoords = Rs2Player.getWorldLocation();
         }
         // If portal is more than 10 tiles from altar, use settings menu to leave. Else, just walk back to portal.
-        if(usePortal == null){
+        if (usePortal == null){
             usePortal = altarCoords.distanceTo(portalCoords) <= 10;
         }
     }

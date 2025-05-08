@@ -21,15 +21,52 @@ public class GildedAltarOverlay extends OverlayPanel {
     public Dimension render(Graphics2D graphics) {
         try {
             panelComponent.setPreferredSize(new Dimension(200, 300));
-            panelComponent.getChildren().add(TitleComponent.builder()
-                    .text("Micro Gilded Altar V1.1.0")
-                    .color(Color.GREEN)
-                    .build());
 
-            panelComponent.getChildren().add(LineComponent.builder().build());
+            panelComponent.getChildren().add(
+                TitleComponent.builder()
+                    .text("Gilded Altar")
+                    .color(Color.GREEN)
+                    .build()
+            );
+
+            panelComponent.getChildren().add(
+                LineComponent.builder()
+                    .left("Current Prayer Level: ")
+                    .right(String.valueOf(GildedAltarScript.getPrayerLevel()))
+                    .build()
+            );
+
+            panelComponent.getChildren().add(
+                LineComponent.builder()
+                    .left("Experience per hour: ")
+                    .right(String.valueOf(GildedAltarScript.getExperiencePerHour(GildedAltarScript.startingExp, GildedAltarScript.currentExp)))
+                    .build()
+            );
+
+            panelComponent.getChildren().add(
+                LineComponent.builder()
+                    .left("Bones per hour: ")
+                    .right(String.valueOf(GildedAltarScript.getBonesPerHour(GildedAltarScript.startingBones, GildedAltarScript.currentBones)))
+                    .build()
+            );
+
+            panelComponent.getChildren().add(
+                LineComponent.builder()
+                    .left("Time until level: ")
+                    .right(String.valueOf(GildedAltarScript.getTimeUntilLevel(GildedAltarScript.startingLevel, GildedAltarScript.currentLevel)))
+                    .build()
+            );
+
+            panelComponent.getChildren().add(
+                LineComponent.builder()
+                    .left("Runtime: ")
+                    .right(String.valueOf(GildedAltarScript.getRuntime(GildedAltarScript.startTime)))
+                    .build()
+            );
 
             panelComponent.getChildren().add(LineComponent.builder()
-                    .left(GildedAltarScript.state.toString())
+                    .left("Status: ")
+                    .right(GildedAltarScript.state.toString())
                     .build());
 
         } catch(Exception ex) {
