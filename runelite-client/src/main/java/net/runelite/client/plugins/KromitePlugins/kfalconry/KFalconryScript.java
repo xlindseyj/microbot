@@ -7,17 +7,29 @@ import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.client.plugins.microbot.Microbot;
 import net.runelite.client.plugins.microbot.Script;
+import net.runelite.client.plugins.microbot.util.bank.Rs2Bank;
+import net.runelite.client.plugins.microbot.util.camera.Rs2Camera;
+import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
 import net.runelite.client.plugins.microbot.util.npc.Rs2Npc;
 import net.runelite.client.plugins.microbot.util.player.Rs2Player;
-import net.runelite.client.plugins.microbot.util.camera.Rs2Camera;
-import net.runelite.client.plugins.microbot.util.movement.Rs2Movement;
-import net.runelite.client.plugins.microbot.util.random.Rs2Random;
-import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
-import net.runelite.client.plugins.microbot.util.bank.Rs2Bank;
+import net.runelite.client.plugins.microbot.util.walker.Rs2Walker;
 import net.runelite.client.plugins.microbot.util.antiban.Rs2AntibanSettings;
+import net.runelite.client.plugins.microbot.util.gameobject.Rs2GameObject;
+import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
+import net.runelite.client.plugins.microbot.util.keyboard.Rs2Keyboard;
+import net.runelite.client.plugins.microbot.util.math.Rs2Random;
+import net.runelite.client.plugins.microbot.util.menu.NewMenuEntry;
+import net.runelite.client.plugins.microbot.util.misc.Rs2UiHelper;
+import net.runelite.client.plugins.microbot.util.npc.Rs2Npc;
+import net.runelite.client.plugins.microbot.util.npc.Rs2NpcModel;
+import net.runelite.client.plugins.microbot.util.tabs.Rs2Tab;
+import net.runelite.client.plugins.microbot.util.tile.Rs2Tile;
+import net.runelite.client.plugins.microbot.util.widget.Rs2Widget;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
@@ -31,6 +43,7 @@ public class KFalconryScript extends Script {
     private static int startExperience = 0;
     private static AtomicInteger kebbitsHunted = new AtomicInteger(0);
     private State currentState = State.CATCH;
+    private ExecutorService executor = Executors.newSingleThreadExecutor();
 
     private static final WorldPoint FALCONRY_AREA_CENTER = new WorldPoint(2371, 3619, 0);
     private static final int SEARCH_RADIUS = 15;
@@ -63,11 +76,11 @@ public class KFalconryScript extends Script {
     }
 
     public boolean run(KFalconryConfig config) {
-        // Use executor from the Script class
-        getExecutor().submit(() -> {
+        // Use executor service
+        executor.submit(() -> {
             try {
                 if (!Microbot.isLoggedIn()) return;
-                if (!super.isRunning()) return;
+                if (!isRunning()) return;
 
                 // Check if we're in the falconry area
                 if (Rs2Player.distanceTo(FALCONRY_AREA_CENTER) > 50 && currentState != State.BANKING) {
@@ -115,12 +128,12 @@ public class KFalconryScript extends Script {
 
                 // Apply random camera movement occasionally
                 if (Rs2Random.random() < 0.05) {
-                    Rs2Camera.rotateTo(Rs2Random.low(0, 359), Rs2Random.low(0, 100));
-                    sleep(Rs2Random.mid(200, 800));
+                    Rs2Camera.turnTo(Rs2Random.between(0, 359), Rs2Random.between(0, 100));
+                    sleep(Rs2Random.between(200, 800));
                 }
 
                 // Random chance to take a micro break
-                if (Rs2Random.random() < Rs2AntibanSettings.microBreakChance && config.enableBreaks()) {
+                if (Rs2Random.random() < 0.15 && config.enableBreaks()) {
                     currentState = State.IDLE;
                 }
 
@@ -144,38 +157,38 @@ public class KFalconryScript extends Script {
             log.info("Found kebbit to hunt: " + kebbit.getName());
 
             // Interact with the kebbit
-            if (Rs2Npc.interactWithNpc(kebbit.getId(), "Catch")) {
+            if (Rs2Npc.interact(kebbit, "Catch")) {
                 Rs2Player.waitForAnimation();
-                sleep(Rs2Random.mid(600, 1200));
+                sleep(Rs2Random.between(600, 1200));
                 currentState = State.RETRIEVE;
             }
         } else {
             // If no kebbit found, move to a random position in the area to find one
             WorldPoint randomPoint = new WorldPoint(
-                    FALCONRY_AREA_CENTER.getX() + Rs2Random.low(-SEARCH_RADIUS, SEARCH_RADIUS),
-                    FALCONRY_AREA_CENTER.getY() + Rs2Random.low(-SEARCH_RADIUS, SEARCH_RADIUS),
+                    FALCONRY_AREA_CENTER.getX() + Rs2Random.between(-SEARCH_RADIUS, SEARCH_RADIUS),
+                    FALCONRY_AREA_CENTER.getY() + Rs2Random.between(-SEARCH_RADIUS, SEARCH_RADIUS),
                     0
             );
 
-            Rs2Movement.walkTo(randomPoint);
-            sleep(Rs2Random.mid(1500, 3000));
+            Rs2Walker.walkTo(randomPoint);
+            sleep(Rs2Random.between(1500, 3000));
         }
     }
 
     private void handleRetrieveState() {
         // Wait for falcon to catch the kebbit
-        sleep(Rs2Random.mid(1200, 2000));
+        sleep(Rs2Random.between(1200, 2000));
 
         // Look for a falcon with the "Retrieve" option
-        NPC falcon = Rs2Npc.findNpc(npc ->
+        NPC falcon = Rs2Npc.getNpc(npc ->
                 npc != null &&
-                        Arrays.stream(npc.getComposition().getActions()).anyMatch(action ->
+                        Arrays.stream(npc.getTransformedComposition().getActions()).anyMatch(action ->
                                 action != null && action.equals("Retrieve")
                         )
         );
 
         if (falcon != null) {
-            if (Rs2Npc.interactWithNpc(falcon.getId(), "Retrieve")) {
+            if (Rs2Npc.interact(falcon, "Retrieve")) {
                 Rs2Player.waitForAnimation();
 
                 // Increment kebbit counter
@@ -186,7 +199,7 @@ public class KFalconryScript extends Script {
                 currentTarget = null;
 
                 // Short pause before looking for next kebbit
-                sleep(Rs2Random.low(400, 800));
+                sleep(Rs2Random.between(400, 800));
             }
         } else {
             // If we can't find the falcon after some time, go back to catching
@@ -199,31 +212,31 @@ public class KFalconryScript extends Script {
     private void handleBankingState() {
         // Walk to bank if not near bank
         if (Rs2Player.distanceTo(BANK_LOCATION) > 5) {
-            Rs2Movement.walkTo(BANK_LOCATION);
-            sleep(Rs2Random.mid(1000, 2000));
+            Rs2Walker.walkTo(BANK_LOCATION);
+            sleep(Rs2Random.between(1000, 2000));
             return;
         }
 
         // Open bank
         if (!Rs2Bank.isOpen()) {
             Rs2Bank.openBank();
-            sleep(Rs2Random.mid(800, 1200));
+            sleep(Rs2Random.between(800, 1200));
             return;
         }
 
         // Deposit all items except falcon and bird snares
         Rs2Bank.depositAllExcept(item ->
-                item.getName() != null &&
+                item != null && item.getName() != null &&
                         (item.getName().contains("falcon") || item.getName().contains("bird snare"))
         );
 
-        sleep(Rs2Random.mid(600, 1000));
+        sleep(Rs2Random.between(600, 1000));
         Rs2Bank.closeBank();
-        sleep(Rs2Random.mid(600, 1000));
+        sleep(Rs2Random.between(600, 1000));
 
         // Return to falconry area
-        Rs2Movement.walkTo(FALCONRY_AREA_CENTER);
-        sleep(Rs2Random.mid(2000, 3000));
+        Rs2Walker.walkTo(FALCONRY_AREA_CENTER);
+        sleep(Rs2Random.between(2000, 3000));
 
         // Reset state
         currentState = State.CATCH;
@@ -233,7 +246,7 @@ public class KFalconryScript extends Script {
         // Drop all kebbit fur and bones
         for (String itemName : HUNT_ITEMS) {
             Rs2Inventory.dropAll(itemName);
-            sleep(Rs2Random.low(300, 600));
+            sleep(Rs2Random.between(300, 600));
         }
 
         // Reset state
@@ -242,15 +255,12 @@ public class KFalconryScript extends Script {
 
     private void performIdleBehavior() {
         // Simulate a player taking a short break
-        int idleAction = Rs2Random.low(0, 3);
-        int idleDuration = Rs2Random.mid(
-                Rs2AntibanSettings.microBreakDurationLow * 1000,
-                Rs2AntibanSettings.microBreakDurationHigh * 1000
-        );
+        int idleAction = Rs2Random.between(0, 3);
+        int idleDuration = Rs2Random.between(3000, 15000);
 
         switch (idleAction) {
             case 0: // Move camera slightly
-                Rs2Camera.rotateTo(Rs2Random.low(-50, 50), Rs2Random.low(-50, 50));
+                Rs2Camera.turnTo(Rs2Random.between(-50, 50), Rs2Random.between(-50, 50));
                 sleep(idleDuration);
                 break;
             case 1: // Just wait
@@ -258,11 +268,11 @@ public class KFalconryScript extends Script {
                 break;
             case 2: // Move to a nearby spot
                 WorldPoint nearbyPoint = new WorldPoint(
-                        Rs2Player.getWorldLocation().getX() + Rs2Random.low(-5, 5),
-                        Rs2Player.getWorldLocation().getY() + Rs2Random.low(-5, 5),
+                        Rs2Player.getWorldLocation().getX() + Rs2Random.between(-5, 5),
+                        Rs2Player.getWorldLocation().getY() + Rs2Random.between(-5, 5),
                         0
                 );
-                Rs2Movement.walkTo(nearbyPoint);
+                Rs2Walker.walkTo(nearbyPoint);
                 sleep(idleDuration);
                 break;
             case 3: // Look at stats
@@ -286,7 +296,7 @@ public class KFalconryScript extends Script {
 
     private NPC findClosestKebbit() {
         // Find kebbits using a predicate
-        return Rs2Npc.findNpc(npc -> {
+        return Rs2Npc.getNpc(npc -> {
             if (npc == null) return false;
             int npcId = npc.getId();
             for (int id : targetKebbits) {
@@ -379,5 +389,6 @@ public class KFalconryScript extends Script {
     public void shutdown() {
         log.info("Falconry script stopped. Total kebbits hunted: " + kebbitsHunted.get());
         log.info("Total XP gained: " + (Microbot.getClient().getSkillExperience(Skill.HUNTER) - startExperience));
+        executor.shutdown();
     }
 }
