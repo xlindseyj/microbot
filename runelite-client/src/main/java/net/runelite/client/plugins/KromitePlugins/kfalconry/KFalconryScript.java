@@ -1,0 +1,383 @@
+package net.runelite.client.plugins.KromitePlugins.kfalconry;
+
+import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Experience;
+import net.runelite.api.NPC;
+import net.runelite.api.Skill;
+import net.runelite.api.coords.WorldPoint;
+import net.runelite.client.plugins.microbot.Microbot;
+import net.runelite.client.plugins.microbot.Script;
+import net.runelite.client.plugins.microbot.util.npc.Rs2Npc;
+import net.runelite.client.plugins.microbot.util.player.Rs2Player;
+import net.runelite.client.plugins.microbot.util.camera.Rs2Camera;
+import net.runelite.client.plugins.microbot.util.movement.Rs2Movement;
+import net.runelite.client.plugins.microbot.util.random.Rs2Random;
+import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
+import net.runelite.client.plugins.microbot.util.bank.Rs2Bank;
+import net.runelite.client.plugins.microbot.util.antiban.Rs2AntibanSettings;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+
+@Slf4j
+public class KFalconryScript extends Script {
+    public static double version = 1.0;
+    private static final int DARK_KEBBIT_ID = 23094;
+    private static final int SPOTTED_KEBBIT_ID = 23097;
+    private static final int DASHING_KEBBIT_ID = 23095; // Add other kebbit IDs as needed
+
+    private static long startTime = 0;
+    private static int startExperience = 0;
+    private static AtomicInteger kebbitsHunted = new AtomicInteger(0);
+    private State currentState = State.CATCH;
+
+    private static final WorldPoint FALCONRY_AREA_CENTER = new WorldPoint(2371, 3619, 0);
+    private static final int SEARCH_RADIUS = 15;
+
+    // Bank location near falconry
+    private static final WorldPoint BANK_LOCATION = new WorldPoint(2383, 3487, 0);
+
+    // Available kebbits to hunt
+    private int[] targetKebbits = {DARK_KEBBIT_ID, SPOTTED_KEBBIT_ID, DASHING_KEBBIT_ID};
+    private NPC currentTarget = null;
+
+    // Items to keep track of
+    private static final List<String> HUNT_ITEMS = Arrays.asList("kebbit fur", "spotted kebbit fur", "dark kebbit fur", "bones");
+
+    private enum State {
+        CATCH,
+        RETRIEVE,
+        BANKING,
+        DROPPING,
+        IDLE
+    }
+
+    @Override
+    public boolean onStart() {
+        startTime = System.currentTimeMillis();
+        startExperience = Microbot.getClient().getSkillExperience(Skill.HUNTER);
+        log.info("Starting Falconry script v" + version);
+        applyAntiBanSettings();
+        return true;
+    }
+
+    public boolean run(KFalconryConfig config) {
+        // Use executor from the Script class
+        getExecutor().submit(() -> {
+            try {
+                if (!Microbot.isLoggedIn()) return;
+                if (!super.isRunning()) return;
+
+                // Check if we're in the falconry area
+                if (Rs2Player.distanceTo(FALCONRY_AREA_CENTER) > 50 && currentState != State.BANKING) {
+                    log.warn("Not in falconry area. Please teleport to the Piscatoris Hunter area.");
+                    Microbot.status = "Not in falconry area";
+                    return;
+                }
+
+                // Check if inventory is full
+                if (Rs2Inventory.isFull() && currentState != State.BANKING && currentState != State.DROPPING) {
+                    if (config.enableBanking()) {
+                        currentState = State.BANKING;
+                    } else {
+                        currentState = State.DROPPING;
+                    }
+                }
+
+                // Main script logic
+                switch (currentState) {
+                    case CATCH:
+                        Microbot.status = "Catching kebbits";
+                        handleCatchState();
+                        break;
+
+                    case RETRIEVE:
+                        Microbot.status = "Retrieving falcon";
+                        handleRetrieveState();
+                        break;
+
+                    case BANKING:
+                        Microbot.status = "Banking items";
+                        handleBankingState();
+                        break;
+
+                    case DROPPING:
+                        Microbot.status = "Dropping items";
+                        handleDroppingState();
+                        break;
+
+                    case IDLE:
+                        Microbot.status = "Taking a short break";
+                        performIdleBehavior();
+                        break;
+                }
+
+                // Apply random camera movement occasionally
+                if (Rs2Random.random() < 0.05) {
+                    Rs2Camera.rotateTo(Rs2Random.low(0, 359), Rs2Random.low(0, 100));
+                    sleep(Rs2Random.mid(200, 800));
+                }
+
+                // Random chance to take a micro break
+                if (Rs2Random.random() < Rs2AntibanSettings.microBreakChance && config.enableBreaks()) {
+                    currentState = State.IDLE;
+                }
+
+            } catch (Exception e) {
+                log.error("Error in falconry script", e);
+            }
+        });
+        return true;
+    }
+
+    private void handleCatchState() {
+        // If player is already animating, wait
+        if (Rs2Player.isAnimating()) {
+            return;
+        }
+
+        // Find closest kebbit to hunt
+        NPC kebbit = findClosestKebbit();
+        if (kebbit != null) {
+            currentTarget = kebbit;
+            log.info("Found kebbit to hunt: " + kebbit.getName());
+
+            // Interact with the kebbit
+            if (Rs2Npc.interactWithNpc(kebbit.getId(), "Catch")) {
+                Rs2Player.waitForAnimation();
+                sleep(Rs2Random.mid(600, 1200));
+                currentState = State.RETRIEVE;
+            }
+        } else {
+            // If no kebbit found, move to a random position in the area to find one
+            WorldPoint randomPoint = new WorldPoint(
+                    FALCONRY_AREA_CENTER.getX() + Rs2Random.low(-SEARCH_RADIUS, SEARCH_RADIUS),
+                    FALCONRY_AREA_CENTER.getY() + Rs2Random.low(-SEARCH_RADIUS, SEARCH_RADIUS),
+                    0
+            );
+
+            Rs2Movement.walkTo(randomPoint);
+            sleep(Rs2Random.mid(1500, 3000));
+        }
+    }
+
+    private void handleRetrieveState() {
+        // Wait for falcon to catch the kebbit
+        sleep(Rs2Random.mid(1200, 2000));
+
+        // Look for a falcon with the "Retrieve" option
+        NPC falcon = Rs2Npc.findNpc(npc ->
+                npc != null &&
+                        Arrays.stream(npc.getComposition().getActions()).anyMatch(action ->
+                                action != null && action.equals("Retrieve")
+                        )
+        );
+
+        if (falcon != null) {
+            if (Rs2Npc.interactWithNpc(falcon.getId(), "Retrieve")) {
+                Rs2Player.waitForAnimation();
+
+                // Increment kebbit counter
+                kebbitsHunted.incrementAndGet();
+
+                // Reset state and mark current target as null
+                currentState = State.CATCH;
+                currentTarget = null;
+
+                // Short pause before looking for next kebbit
+                sleep(Rs2Random.low(400, 800));
+            }
+        } else {
+            // If we can't find the falcon after some time, go back to catching
+            currentState = State.CATCH;
+            currentTarget = null;
+            log.debug("Couldn't find falcon to retrieve, returning to catch state");
+        }
+    }
+
+    private void handleBankingState() {
+        // Walk to bank if not near bank
+        if (Rs2Player.distanceTo(BANK_LOCATION) > 5) {
+            Rs2Movement.walkTo(BANK_LOCATION);
+            sleep(Rs2Random.mid(1000, 2000));
+            return;
+        }
+
+        // Open bank
+        if (!Rs2Bank.isOpen()) {
+            Rs2Bank.openBank();
+            sleep(Rs2Random.mid(800, 1200));
+            return;
+        }
+
+        // Deposit all items except falcon and bird snares
+        Rs2Bank.depositAllExcept(item ->
+                item.getName() != null &&
+                        (item.getName().contains("falcon") || item.getName().contains("bird snare"))
+        );
+
+        sleep(Rs2Random.mid(600, 1000));
+        Rs2Bank.closeBank();
+        sleep(Rs2Random.mid(600, 1000));
+
+        // Return to falconry area
+        Rs2Movement.walkTo(FALCONRY_AREA_CENTER);
+        sleep(Rs2Random.mid(2000, 3000));
+
+        // Reset state
+        currentState = State.CATCH;
+    }
+
+    private void handleDroppingState() {
+        // Drop all kebbit fur and bones
+        for (String itemName : HUNT_ITEMS) {
+            Rs2Inventory.dropAll(itemName);
+            sleep(Rs2Random.low(300, 600));
+        }
+
+        // Reset state
+        currentState = State.CATCH;
+    }
+
+    private void performIdleBehavior() {
+        // Simulate a player taking a short break
+        int idleAction = Rs2Random.low(0, 3);
+        int idleDuration = Rs2Random.mid(
+                Rs2AntibanSettings.microBreakDurationLow * 1000,
+                Rs2AntibanSettings.microBreakDurationHigh * 1000
+        );
+
+        switch (idleAction) {
+            case 0: // Move camera slightly
+                Rs2Camera.rotateTo(Rs2Random.low(-50, 50), Rs2Random.low(-50, 50));
+                sleep(idleDuration);
+                break;
+            case 1: // Just wait
+                sleep(idleDuration);
+                break;
+            case 2: // Move to a nearby spot
+                WorldPoint nearbyPoint = new WorldPoint(
+                        Rs2Player.getWorldLocation().getX() + Rs2Random.low(-5, 5),
+                        Rs2Player.getWorldLocation().getY() + Rs2Random.low(-5, 5),
+                        0
+                );
+                Rs2Movement.walkTo(nearbyPoint);
+                sleep(idleDuration);
+                break;
+            case 3: // Look at stats
+                if (Rs2Random.random() < 0.5) {
+                    openSkillsTab();
+                    sleep(idleDuration);
+                } else {
+                    sleep(idleDuration);
+                }
+                break;
+        }
+
+        // Return to catching
+        currentState = State.CATCH;
+    }
+
+    private void openSkillsTab() {
+        // Implementation depends on available API
+        // This is a placeholder for now
+    }
+
+    private NPC findClosestKebbit() {
+        // Find kebbits using a predicate
+        return Rs2Npc.findNpc(npc -> {
+            if (npc == null) return false;
+            int npcId = npc.getId();
+            for (int id : targetKebbits) {
+                if (npcId == id) return true;
+            }
+            return false;
+        });
+    }
+
+    // Utility methods for overlay
+    public static String getRuntime() {
+        long elapsed = System.currentTimeMillis() - startTime;
+        long hours = elapsed / 3600000;
+        long minutes = (elapsed % 3600000) / 60000;
+        long seconds = (elapsed % 60000) / 1000;
+        return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+    }
+
+    public static int getHunterLevel() {
+        return Microbot.getClient().getRealSkillLevel(Skill.HUNTER);
+    }
+
+    public static String getExperiencePerHour() {
+        long timeElapsed = System.currentTimeMillis() - startTime;
+        if (timeElapsed <= 0) return "0 xp/h";
+
+        double hoursElapsed = timeElapsed / 3600000.0;
+        int expGained = Microbot.getClient().getSkillExperience(Skill.HUNTER) - startExperience;
+        int expPerHour = (int)(expGained / hoursElapsed);
+
+        return expPerHour + " xp/h";
+    }
+
+    public static int getKebbitsPerHour() {
+        long timeElapsed = System.currentTimeMillis() - startTime;
+        if (timeElapsed <= 0) return 0;
+
+        double hoursElapsed = timeElapsed / 3600000.0;
+        int kebbitCount = kebbitsHunted.get();
+
+        return (int)(kebbitCount / hoursElapsed);
+    }
+
+    public static String getTimeUntilLevel() {
+        int currentExp = Microbot.getClient().getSkillExperience(Skill.HUNTER);
+        int currentLevel = Microbot.getClient().getRealSkillLevel(Skill.HUNTER);
+        int nextLevelExp = Experience.getXpForLevel(currentLevel + 1);
+        int expNeeded = nextLevelExp - currentExp;
+
+        long timeElapsed = System.currentTimeMillis() - startTime;
+        if (timeElapsed <= 0) return "Unknown";
+
+        int expGained = currentExp - startExperience;
+        if (expGained <= 0) return "Unknown";
+
+        double expPerMillis = expGained / (double)timeElapsed;
+        long millisRemaining = (long)(expNeeded / expPerMillis);
+
+        long hours = millisRemaining / 3600000;
+        long minutes = (millisRemaining % 3600000) / 60000;
+
+        return hours + "h " + minutes + "m";
+    }
+
+    public static int getKebbitsHunted() {
+        return kebbitsHunted.get();
+    }
+
+    private void applyAntiBanSettings() {
+        Rs2AntibanSettings.antibanEnabled = true;
+        Rs2AntibanSettings.usePlayStyle = true;
+        Rs2AntibanSettings.simulateFatigue = true;
+        Rs2AntibanSettings.simulateAttentionSpan = true;
+        Rs2AntibanSettings.behavioralVariability = true;
+        Rs2AntibanSettings.nonLinearIntervals = true;
+        Rs2AntibanSettings.naturalMouse = true;
+        Rs2AntibanSettings.moveMouseOffScreen = true;
+        Rs2AntibanSettings.contextualVariability = true;
+        Rs2AntibanSettings.dynamicIntensity = true;
+        Rs2AntibanSettings.devDebug = false;
+        Rs2AntibanSettings.moveMouseRandomly = true;
+        Rs2AntibanSettings.microBreakDurationLow = 3;
+        Rs2AntibanSettings.microBreakDurationHigh = 15;
+        Rs2AntibanSettings.actionCooldownChance = 0.4;
+        Rs2AntibanSettings.microBreakChance = 0.15;
+        Rs2AntibanSettings.moveMouseRandomlyChance = 0.1;
+    }
+
+    @Override
+    public void shutdown() {
+        log.info("Falconry script stopped. Total kebbits hunted: " + kebbitsHunted.get());
+        log.info("Total XP gained: " + (Microbot.getClient().getSkillExperience(Skill.HUNTER) - startExperience));
+    }
+}
