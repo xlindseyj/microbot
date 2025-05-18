@@ -1,10 +1,11 @@
-package net.runelite.client.plugins.KromitePlugins.kfalconry;
+package net.runelite.client.plugins.microbot.KromitePlugins.kfalconry;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Experience;
 import net.runelite.api.NPC;
 import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.coords.LocalPoint;
 import net.runelite.client.plugins.microbot.Microbot;
 import net.runelite.client.plugins.microbot.Script;
 import net.runelite.client.plugins.microbot.util.bank.Rs2Bank;
@@ -118,7 +119,17 @@ public class KFalconryScript extends Script {
 
                 // Apply random camera movement occasionally
                 if (Rs2Random.between(0, 100) < 5) {
-                    Rs2Camera.turnTo(Rs2Random.between(0, 359), Rs2Random.between(0, 100));
+                    // Fix for: Cannot resolve method 'turnTo(int, int)'
+                    // Using a nearby location for camera movement instead
+                    WorldPoint nearbyPoint = new WorldPoint(
+                            Rs2Player.getWorldLocation().getX() + Rs2Random.between(-10, 10),
+                            Rs2Player.getWorldLocation().getY() + Rs2Random.between(-10, 10),
+                            0
+                    );
+                    LocalPoint localPoint = LocalPoint.fromWorld(Microbot.getClient(), nearbyPoint);
+                    if (localPoint != null) {
+                        Rs2Camera.turnTo(localPoint);
+                    }
                     sleep(Rs2Random.between(200, 800));
                 }
 
@@ -146,8 +157,8 @@ public class KFalconryScript extends Script {
             currentTarget = kebbit;
             log.info("Found kebbit to hunt: " + kebbit.getName());
 
-            // Interact with the kebbit
-            if (Rs2Npc.interact(kebbit, "Catch", true)) {
+            // Fix for: Cannot resolve method 'interact(NPC, String, boolean)'
+            if (Rs2Npc.interact(kebbit, "Catch")) {
                 Rs2Player.waitForAnimation();
                 sleep(Rs2Random.between(600, 1200));
                 currentState = State.RETRIEVE;
@@ -169,16 +180,16 @@ public class KFalconryScript extends Script {
         // Wait for falcon to catch the kebbit
         sleep(Rs2Random.between(1200, 2000));
 
-        // Look for a falcon with the "Retrieve" option
         NPC falcon = Rs2Npc.findNpc(npc ->
-                npc != null &&
-                        npc.getComposition() != null &&
-                        npc.getComposition().getActions() != null &&
-                        Arrays.stream(npc.getComposition().getActions()).anyMatch("Retrieve"::contentEquals)
+            npc.getName().equals("Gyr Falcon") &&
+            npc.getInteracting() != null &&
+            npc.getInteracting().equals(Microbot.getClient().getLocalPlayer()) &&
+            npc.hasAction("Retrieve")
         );
 
         if (falcon != null) {
-            if (Rs2Npc.interact(falcon, "Retrieve", true)) {
+            // Fix for: Cannot resolve method 'interact(NPC, String, boolean)'
+            if (Rs2Npc.interact(falcon, "Retrieve")) {
                 Rs2Player.waitForAnimation();
 
                 // Increment kebbit counter
@@ -217,9 +228,9 @@ public class KFalconryScript extends Script {
         // Deposit all items except falcon and bird snares
         Rs2Bank.depositAllExcept(item ->
                 item != null &&
-                        item.getItemComposition() != null &&
-                        (item.getItemComposition().getName().contains("falcon") ||
-                                item.getItemComposition().getName().contains("bird snare"))
+                        item.getName() != null &&
+                        (item.getName().contains("falcon") ||
+                                item.getName().contains("bird snare"))
         );
 
         sleep(Rs2Random.between(600, 1000));
@@ -252,7 +263,11 @@ public class KFalconryScript extends Script {
 
         switch (idleAction) {
             case 0: // Move camera slightly
-                Rs2Camera.turnTo(Rs2Random.between(-50, 50), Rs2Random.between(-50, 50));
+                WorldPoint nearPoint = Rs2Player.getWorldLocation();
+                LocalPoint localPoint = LocalPoint.fromWorld(Microbot.getClient(), nearPoint);
+                if (localPoint != null) {
+                    Rs2Camera.turnTo(localPoint);
+                }
                 sleep(idleDuration);
                 break;
             case 1: // Just wait
@@ -282,13 +297,14 @@ public class KFalconryScript extends Script {
     }
 
     private void openSkillsTab() {
-        Rs2Tab.switchToStatsTab();
+        // Fix for: Cannot resolve method 'switchToStatsTab' in 'Rs2Tab'
+        Rs2Tab.open(Rs2Tab.TABS.SKILLS);
         sleep(Rs2Random.between(500, 1500));
     }
 
     private NPC findClosestKebbit() {
-        // Find kebbits using a predicate
-        return Rs2Npc.findNpc(npc -> {
+        // Fix for: Cannot resolve method 'findNpc' in 'Rs2Npc'
+        return Rs2Npc.getNpc(npc -> {
             if (npc == null) return false;
             int npcId = npc.getId();
             for (int id : targetKebbits) {

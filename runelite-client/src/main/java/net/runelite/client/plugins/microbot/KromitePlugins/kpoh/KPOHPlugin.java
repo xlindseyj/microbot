@@ -1,4 +1,4 @@
-package net.runelite.client.plugins.microbot.kpoh;
+package net.runelite.client.plugins.microbot.KromitePlugins.kpoh;
 
 import com.google.inject.Provides;
 import lombok.extern.slf4j.Slf4j;
@@ -6,9 +6,9 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.plugins.microbot.KromitePlugins.kpoh.scripts.DefaultScript;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import net.runelite.client.plugins.microbot.kpoh.scripts.DefaultScript;
 import net.runelite.client.ui.overlay.OverlayManager;
 
 import javax.inject.Inject;

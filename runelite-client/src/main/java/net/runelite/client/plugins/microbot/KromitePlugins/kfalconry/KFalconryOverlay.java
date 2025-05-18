@@ -1,4 +1,4 @@
-package net.runelite.client.plugins.KromitePlugins.kfalconry;
+package net.runelite.client.plugins.microbot.KromitePlugins.kfalconry;
 
 import net.runelite.client.plugins.microbot.Microbot;
 import net.runelite.client.ui.overlay.OverlayPanel;

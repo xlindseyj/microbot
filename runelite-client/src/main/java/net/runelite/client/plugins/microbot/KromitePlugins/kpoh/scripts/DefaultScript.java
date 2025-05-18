@@ -1,4 +1,4 @@
-package net.runelite.client.plugins.microbot.kpoh.scripts;
+package net.runelite.client.plugins.microbot.KromitePlugins.kpoh.scripts;
 
 import net.runelite.api.MenuAction;
 import net.runelite.api.NPCComposition;
@@ -6,10 +6,10 @@ import net.runelite.api.ObjectID;
 import net.runelite.api.TileObject;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.widgets.Widget;
+import net.runelite.client.plugins.microbot.KromitePlugins.kpoh.KPOHConfig;
+import net.runelite.client.plugins.microbot.KromitePlugins.kpoh.enums.GildedAltarPlayerState;
 import net.runelite.client.plugins.microbot.Microbot;
 import net.runelite.client.plugins.microbot.Script;
-import net.runelite.client.plugins.microbot.kpoh.KPOHConfig;
-import net.runelite.client.plugins.microbot.kpoh.enums.GildedAltarPlayerState;
 import net.runelite.client.plugins.microbot.util.antiban.Rs2AntibanSettings;
 import net.runelite.client.plugins.microbot.util.gameobject.Rs2GameObject;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;

@@ -1,6 +1,8 @@
-package net.runelite.client.plugins.microbot.kpoh;
+package net.runelite.client.plugins.microbot.KromitePlugins.kpoh;
 
-import net.runelite.client.config.*;
+import net.runelite.client.config.Config;
+import net.runelite.client.config.ConfigGroup;
+import net.runelite.client.config.ConfigItem;
 
 @ConfigGroup("KPlayerOwnedHouse")
 public interface KPOHConfig extends Config {

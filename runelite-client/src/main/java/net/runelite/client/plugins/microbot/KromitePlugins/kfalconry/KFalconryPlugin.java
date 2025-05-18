@@ -1,9 +1,8 @@
-package net.runelite.client.plugins.KromitePlugins.kfalconry;
+package net.runelite.client.plugins.microbot.KromitePlugins.kfalconry;
 
 import com.google.inject.Provides;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.config.ConfigManager;
-import net.runelite.client.config.Keybind;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
@@ -12,7 +11,6 @@ import net.runelite.client.input.KeyManager;
 import net.runelite.client.util.HotkeyListener;
 
 import javax.inject.Inject;
-import java.awt.event.KeyEvent;
 
 @Slf4j
 @PluginDescriptor(

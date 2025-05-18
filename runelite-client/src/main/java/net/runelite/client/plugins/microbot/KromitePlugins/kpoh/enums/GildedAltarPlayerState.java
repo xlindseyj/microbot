@@ -1,4 +1,4 @@
-package net.runelite.client.plugins.KromitePlugins.kpoh.enums;
+package net.runelite.client.plugins.microbot.KromitePlugins.kpoh.enums;
 
 import lombok.Getter;
 

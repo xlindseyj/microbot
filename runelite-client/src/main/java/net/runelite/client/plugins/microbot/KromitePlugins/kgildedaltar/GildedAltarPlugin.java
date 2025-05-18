@@ -1,4 +1,4 @@
-package net.runelite.client.plugins.KromitePlugins.kpoh;
+package net.runelite.client.plugins.microbot.KromitePlugins.kgildedaltar;
 
 import com.google.inject.Provides;
 import lombok.extern.slf4j.Slf4j;
@@ -6,7 +6,6 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
-import net.runelite.client.plugins.KromitePlugins.kpoh.scripts.DefaultScript;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
@@ -15,32 +14,30 @@ import javax.inject.Inject;
 import java.awt.*;
 
 @PluginDescriptor(
-        name = "KPOH",
-        description = "Kromite's Player Owned House - Gilded Altar Plugin",
-        tags = {"kromite", "kpoh", "microbot", "poh", "plugin"},
+        name = PluginDescriptor.Mocrosoft + "Gilded Altar",
+        description = "Gilded Altar plugin",
+        tags = {"prayer", "microbot"},
         enabledByDefault = false
 )
 @Slf4j
-public class KPOHPlugin extends Plugin {
-    public static String version = "1.0.0";
-
+public class GildedAltarPlugin extends Plugin {
     @Inject
-    private KPOHConfig config;
+    private GildedAltarConfig config;
 
     @Provides
-    KPOHConfig provideConfig(ConfigManager configManager) {
-        return configManager.getConfig(KPOHConfig.class);
+    GildedAltarConfig provideConfig(ConfigManager configManager) {
+        return configManager.getConfig(GildedAltarConfig.class);
     }
 
     @Inject
     private OverlayManager overlayManager;
     @Inject
-    private KPOHOverlay gildedAltarOverlay;
+    private GildedAltarOverlay gildedAltarOverlay;
 
     @Inject
-    DefaultScript gildedAltarScript;
+    GildedAltarScript gildedAltarScript;
 
-
+ 
     @Override
     protected void startUp() throws AWTException {
         if (overlayManager != null) {

@@ -1,4 +1,4 @@
-package net.runelite.client.plugins.microbot.kpoh;
+package net.runelite.client.plugins.microbot.KromitePlugins.kpoh;
 
 import net.runelite.client.plugins.microbot.Microbot;
 import net.runelite.client.ui.overlay.OverlayPanel;
