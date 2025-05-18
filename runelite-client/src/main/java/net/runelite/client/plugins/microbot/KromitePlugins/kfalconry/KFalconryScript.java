@@ -12,6 +12,7 @@ import net.runelite.client.plugins.microbot.util.bank.Rs2Bank;
 import net.runelite.client.plugins.microbot.util.camera.Rs2Camera;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
 import net.runelite.client.plugins.microbot.util.npc.Rs2Npc;
+import net.runelite.client.plugins.microbot.util.npc.Rs2NpcModel;
 import net.runelite.client.plugins.microbot.util.player.Rs2Player;
 import net.runelite.client.plugins.microbot.util.walker.Rs2Walker;
 import net.runelite.client.plugins.microbot.util.antiban.Rs2AntibanSettings;
@@ -20,9 +21,12 @@ import net.runelite.client.plugins.microbot.util.tabs.Rs2Tab;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Slf4j
 public class KFalconryScript extends Script {
@@ -158,7 +162,7 @@ public class KFalconryScript extends Script {
             log.info("Found kebbit to hunt: " + kebbit.getName());
 
             // Fix for: Cannot resolve method 'interact(NPC, String, boolean)'
-            if (Rs2Npc.interact(kebbit, "Catch")) {
+            if (Rs2Npc.interact(kebbit.getName(), "Catch")) {
                 Rs2Player.waitForAnimation();
                 sleep(Rs2Random.between(600, 1200));
                 currentState = State.RETRIEVE;
@@ -180,16 +184,16 @@ public class KFalconryScript extends Script {
         // Wait for falcon to catch the kebbit
         sleep(Rs2Random.between(1200, 2000));
 
-        NPC falcon = Rs2Npc.findNpc(npc ->
-            npc.getName().equals("Gyr Falcon") &&
-            npc.getInteracting() != null &&
-            npc.getInteracting().equals(Microbot.getClient().getLocalPlayer()) &&
-            npc.hasAction("Retrieve")
-        );
-
-        if (falcon != null) {
-            // Fix for: Cannot resolve method 'interact(NPC, String, boolean)'
-            if (Rs2Npc.interact(falcon, "Retrieve")) {
+        // Check if falcon is present
+        NPC falcon = Rs2Npc.getNpc("Gyr Falcon");
+        if (falcon == null) {
+            // If falcon is not found, return to catching
+            currentState = State.CATCH;
+            currentTarget = null;
+            log.debug("Falcon not found, returning to catch state");
+            return;
+        } else {
+            if (Rs2Npc.interact(falcon.getName(), "Retrieve")) {
                 Rs2Player.waitForAnimation();
 
                 // Increment kebbit counter
@@ -201,12 +205,11 @@ public class KFalconryScript extends Script {
 
                 // Short pause before looking for next kebbit
                 sleep(Rs2Random.between(400, 800));
+            } else {
+                log.warn("Failed to retrieve kebbit. Trying again...");
+                // If interaction fails, try again
+                sleep(Rs2Random.between(1000, 2000));
             }
-        } else {
-            // If we can't find the falcon after some time, go back to catching
-            currentState = State.CATCH;
-            currentTarget = null;
-            log.debug("Couldn't find falcon to retrieve, returning to catch state");
         }
     }
 
@@ -226,12 +229,7 @@ public class KFalconryScript extends Script {
         }
 
         // Deposit all items except falcon and bird snares
-        Rs2Bank.depositAllExcept(item ->
-                item != null &&
-                        item.getName() != null &&
-                        (item.getName().contains("falcon") ||
-                                item.getName().contains("bird snare"))
-        );
+        Rs2Bank.depositAllExcept("Gyr Falcon", "Bird snare", "Dramen staff");
 
         sleep(Rs2Random.between(600, 1000));
         Rs2Bank.closeBank();
@@ -298,20 +296,44 @@ public class KFalconryScript extends Script {
 
     private void openSkillsTab() {
         // Fix for: Cannot resolve method 'switchToStatsTab' in 'Rs2Tab'
-        Rs2Tab.open(Rs2Tab.TABS.SKILLS);
+        Rs2Tab.switchToSkillsTab();
         sleep(Rs2Random.between(500, 1500));
     }
 
     private NPC findClosestKebbit() {
-        // Fix for: Cannot resolve method 'findNpc' in 'Rs2Npc'
-        return Rs2Npc.getNpc(npc -> {
-            if (npc == null) return false;
-            int npcId = npc.getId();
-            for (int id : targetKebbits) {
-                if (npcId == id) return true;
+        // find all dark kebbits
+        Stream<Rs2NpcModel> darkKebbits = Rs2Npc.getNpcs(DARK_KEBBIT_ID);
+        // find all spotted kebbits
+        Stream<Rs2NpcModel> spottedKebbits = Rs2Npc.getNpcs(SPOTTED_KEBBIT_ID);
+        // find all dashing kebbits
+        Stream<Rs2NpcModel> dashingKebbits = Rs2Npc.getNpcs(DASHING_KEBBIT_ID);
+
+        // Combine all kebbits into one list
+        List<NPC> allKebbits = Stream.concat(darkKebbits, Stream.concat(spottedKebbits, dashingKebbits))
+                .map(model -> model.getRuneliteNpc())  // Use the proper getter method
+                .filter(Objects::nonNull)      // Ensure no null NPCs
+                .collect(Collectors.toList());
+
+        // Filter kebbits within the search radius
+        allKebbits.removeIf(kebbit -> kebbit.getWorldLocation().distanceTo(FALCONRY_AREA_CENTER) > SEARCH_RADIUS);
+        if (allKebbits.isEmpty()) {
+            return null;
+        }
+
+        // Find the closest kebbit
+        NPC closestKebbit = allKebbits.get(0);
+        for (NPC kebbit : allKebbits) {
+            if (kebbit.getWorldLocation().distanceTo(FALCONRY_AREA_CENTER) < closestKebbit.getWorldLocation().distanceTo(FALCONRY_AREA_CENTER)) {
+                closestKebbit = kebbit;
             }
-            return false;
-        });
+        }
+
+        // Check if the closest kebbit is already being hunted
+        if (currentTarget != null && currentTarget.getId() == closestKebbit.getId()) {
+            return null;
+        }
+
+        return closestKebbit;
     }
 
     // Utility methods for overlay
