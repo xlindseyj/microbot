@@ -14,7 +14,6 @@ import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
 import net.runelite.client.plugins.microbot.util.npc.Rs2Npc;
 import net.runelite.client.plugins.microbot.util.npc.Rs2NpcModel;
 import net.runelite.client.plugins.microbot.util.player.Rs2Player;
-import net.runelite.client.plugins.microbot.util.player.Rs2PlayerModel;
 import net.runelite.client.plugins.microbot.util.walker.Rs2Walker;
 import net.runelite.client.plugins.microbot.util.antiban.Rs2AntibanSettings;
 import net.runelite.client.plugins.microbot.util.math.Rs2Random;
@@ -26,33 +25,41 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Slf4j
 public class KFalconryScript extends Script {
-    public static double version = 1.0;
+    public static double version = 1.1;
     private static final int DARK_KEBBIT_ID = 23094;
     private static final int SPOTTED_KEBBIT_ID = 23097;
-    private static final int DASHING_KEBBIT_ID = 23095; // Add other kebbit IDs as needed
+    private static final int DASHING_KEBBIT_ID = 23095;
 
     private static long startTime = 0;
     private static int startExperience = 0;
     private static AtomicInteger kebbitsHunted = new AtomicInteger(0);
     private State currentState = State.CATCH;
     private ExecutorService executor = Executors.newSingleThreadExecutor();
+    private AtomicBoolean isRunning = new AtomicBoolean(false);
+    private boolean scriptStopped = false;
+    private long lastStateChange = 0;
+    private int stateStuckCount = 0;
 
+    // Updated coordinates for the Falconry area
     private static final WorldPoint FALCONRY_AREA_CENTER = new WorldPoint(2371, 3619, 0);
+
+    // Updated coordinates for the Kebbit hunting area
     private static final WorldPoint KEBBIT_AREA_CENTER = new WorldPoint(2371, 3599, 0);
     private static final int SEARCH_RADIUS = 15;
 
     // Bank location near falconry
     private static final WorldPoint BANK_LOCATION = new WorldPoint(2383, 3487, 0);
 
-    // Available kebbits to hunt
-    private int[] targetKebbits = {DARK_KEBBIT_ID, SPOTTED_KEBBIT_ID, DASHING_KEBBIT_ID};
     private NPC currentTarget = null;
+    private long catchAttemptTime = 0;
+    private static final long CATCH_TIMEOUT = 15000; // 15 seconds timeout for catch attempts
 
     // Items to keep track of
     private static final List<String> HUNT_ITEMS = Arrays.asList("kebbit fur", "spotted kebbit fur", "dark kebbit fur", "bones");
@@ -62,38 +69,60 @@ public class KFalconryScript extends Script {
         RETRIEVE,
         BANKING,
         DROPPING,
-        IDLE
+        IDLE,
+        MOVE_TO_AREA
     }
 
     public boolean onStart() {
         startTime = System.currentTimeMillis();
         startExperience = Microbot.getClient().getSkillExperience(Skill.HUNTER);
+        kebbitsHunted.set(0);
+        currentState = State.CATCH;
+        lastStateChange = System.currentTimeMillis();
         log.info("Starting Falconry script v" + version);
         applyAntiBanSettings();
+        isRunning.set(true);
+        scriptStopped = false;
         return true;
     }
 
     public boolean run(KFalconryConfig config) {
-        // Use executor service
+        if (scriptStopped || !isRunning.get()) {
+            return false;
+        }
+
         executor.submit(() -> {
             try {
-                if (!Microbot.isLoggedIn()) return;
-                // if (!isRunning()) return;
+                if (!Microbot.isLoggedIn() || !isRunning.get()) return;
+
+                // Check for stuck states
+                checkForStuckState();
+
+                // Debug logging
+                log.debug("Current state: {}, Player location: {}", currentState, Rs2Player.getWorldLocation());
 
                 // Check if we're in the falconry area
                 if (Rs2Player.distanceTo(FALCONRY_AREA_CENTER) > 50 && currentState != State.BANKING) {
                     log.warn("Not in falconry area. Please teleport to the Piscatoris Hunter area.");
                     Microbot.status = "Not in falconry area";
+                    sleep(2000);
                     return;
                 }
 
-                // Check player has a falcon
-                if (Rs2Inventory.hasItem("Falconer's glove") || Rs2Player.hasPlayerEquippedItem(Rs2Player.getLocalPlayer(), "Falconer's glove")) {
-                    log.info("Player has a falcon.");
-                } else {
+                // Check player has falcon equipment
+                if (!Rs2Inventory.hasItem("Falconer's glove") && !Rs2Player.hasPlayerEquippedItem(Rs2Player.getLocalPlayer(), "Falconer's glove")) {
                     log.warn("Player does not have a falcon. Please obtain one.");
                     Microbot.status = "No falcon found";
+                    sleep(2000);
                     return;
+                }
+
+                // Check if catch attempt is taking too long
+                if (currentState == State.RETRIEVE && System.currentTimeMillis() - catchAttemptTime > CATCH_TIMEOUT) {
+                    log.info("Catch attempt timed out. Resetting state.");
+                    currentTarget = null;
+                    currentState = State.CATCH;
+                    updateStateChangeTime();
                 }
 
                 // Check if inventory is full
@@ -103,13 +132,14 @@ public class KFalconryScript extends Script {
                     } else {
                         currentState = State.DROPPING;
                     }
+                    updateStateChangeTime();
                 }
 
                 // Main script logic
                 switch (currentState) {
                     case CATCH:
                         Microbot.status = "Catching kebbits";
-                        handleCatchState();
+                        handleCatchState(config);
                         break;
 
                     case RETRIEVE:
@@ -131,12 +161,15 @@ public class KFalconryScript extends Script {
                         Microbot.status = "Taking a short break";
                         performIdleBehavior();
                         break;
+
+                    case MOVE_TO_AREA:
+                        Microbot.status = "Moving to kebbit area";
+                        moveToKebbitsArea();
+                        break;
                 }
 
                 // Apply random camera movement occasionally
                 if (Rs2Random.between(0, 100) < 5) {
-                    // Fix for: Cannot resolve method 'turnTo(int, int)'
-                    // Using a nearby location for camera movement instead
                     WorldPoint nearbyPoint = new WorldPoint(
                             Rs2Player.getWorldLocation().getX() + Rs2Random.between(-10, 10),
                             Rs2Player.getWorldLocation().getY() + Rs2Random.between(-10, 10),
@@ -150,83 +183,137 @@ public class KFalconryScript extends Script {
                 }
 
                 // Random chance to take a micro break
-                if (Rs2Random.between(0, 100) < 15 && config.enableBreaks()) {
+                if (Rs2Random.between(0, 1000) < 15 && config.enableBreaks() && currentState == State.CATCH) {
                     currentState = State.IDLE;
+                    updateStateChangeTime();
                 }
+
+                // Add a sleep to prevent too many CPU cycles
+                sleep(300 + Rs2Random.between(0, 300));
 
             } catch (Exception e) {
                 log.error("Error in falconry script", e);
+                sleep(1000);
             }
         });
         return true;
     }
 
-    private void handleCatchState() {
+    private void handleCatchState(KFalconryConfig config) {
         // If player is already animating, wait
         if (Rs2Player.isAnimating()) {
             return;
         }
 
+        // Check if we're in the kebbit area
+        if (Rs2Player.distanceTo(KEBBIT_AREA_CENTER) > SEARCH_RADIUS) {
+            log.info("Moving closer to kebbit area");
+            currentState = State.MOVE_TO_AREA;
+            updateStateChangeTime();
+            return;
+        }
+
         // Find closest kebbit to hunt
-        NPC kebbit = findClosestKebbit();
+        NPC kebbit = findClosestKebbit(config);
         if (kebbit != null) {
             currentTarget = kebbit;
-            log.info("Found kebbit to hunt: " + kebbit.getName());
+            log.info("Found kebbit to hunt: {}", kebbit.getName());
 
             // Walk to kebbit if needed
             if (Rs2Player.distanceTo(kebbit.getWorldLocation()) > 7) {
                 Rs2Walker.walkTo(kebbit.getWorldLocation());
                 sleep(Rs2Random.between(600, 1200));
+                return;
             }
 
             // Interact with kebbit
             if (Rs2Npc.interact(kebbit.getName(), "Catch")) {
-                Rs2Player.waitForAnimation();
+                catchAttemptTime = System.currentTimeMillis();
+                Rs2Player.waitForAnimation(3000);
                 sleep(Rs2Random.between(600, 1200));
                 currentState = State.RETRIEVE;
+                updateStateChangeTime();
+            } else {
+                // If interaction fails, move a bit and try again
+                WorldPoint movePoint = new WorldPoint(
+                        Rs2Player.getWorldLocation().getX() + Rs2Random.between(-3, 3),
+                        Rs2Player.getWorldLocation().getY() + Rs2Random.between(-3, 3),
+                        0
+                );
+                Rs2Walker.walkTo(movePoint);
+                sleep(Rs2Random.between(800, 1500));
             }
         } else {
             // If no kebbit found, move to a random position in the KEBBIT area
-            int newX = KEBBIT_AREA_CENTER.getX() + Rs2Random.between(-SEARCH_RADIUS, SEARCH_RADIUS);
-            int newY = KEBBIT_AREA_CENTER.getY() + Rs2Random.between(-SEARCH_RADIUS, SEARCH_RADIUS);
-            WorldPoint randomPoint = new WorldPoint(newX, newY, 0);
+            currentState = State.MOVE_TO_AREA;
+            updateStateChangeTime();
+        }
+    }
 
-            // Walking directly to the point
-            Microbot.status = "Walking to kebbit area";
-            Rs2Walker.walkTo(randomPoint);
-            sleep(Rs2Random.between(1500, 3000));
+    private void moveToKebbitsArea() {
+        int newX = KEBBIT_AREA_CENTER.getX() + Rs2Random.between(-SEARCH_RADIUS / 2, SEARCH_RADIUS / 2);
+        int newY = KEBBIT_AREA_CENTER.getY() + Rs2Random.between(-SEARCH_RADIUS / 2, SEARCH_RADIUS / 2);
+        WorldPoint randomPoint = new WorldPoint(newX, newY, 0);
+
+        log.info("Moving to position in kebbit area: {}", randomPoint);
+        Rs2Walker.walkTo(randomPoint);
+
+        // Wait for movement to complete
+        sleep(Rs2Random.between(2000, 3000));
+
+        if (Rs2Player.distanceTo(randomPoint) < 5) {
+            currentState = State.CATCH;
+            updateStateChangeTime();
         }
     }
 
     private void handleRetrieveState() {
         // Wait for falcon to catch the kebbit
-        sleep(Rs2Random.between(1200, 2000));
+        sleep(Rs2Random.between(1000, 1500));
 
         // Check if falcon is present
         NPC falcon = Rs2Npc.getNpc("Gyr Falcon");
         if (falcon == null) {
-            // If falcon is not found, return to catching
+            // If falcon is not found after a short wait, return to catching
+            log.debug("Falcon not found, returning to catch state");
             currentState = State.CATCH;
             currentTarget = null;
-            log.debug("Falcon not found, returning to catch state");
+            updateStateChangeTime();
             return;
-        } else {
-            if (Rs2Npc.interact(falcon.getName(), "Retrieve")) {
-                Rs2Player.waitForAnimation();
+        }
 
+        // Try to interact with the falcon
+        if (Rs2Npc.interact(falcon.getName(), "Retrieve")) {
+            Rs2Player.waitForAnimation(3000);
+
+            // If inventory full, check if we got an item (successful catch)
+            boolean inventoryChanged = Rs2Inventory.isFull() || Rs2Inventory.hasItem("kebbit fur") ||
+                    Rs2Inventory.hasItem("spotted kebbit fur") ||
+                    Rs2Inventory.hasItem("dark kebbit fur");
+
+            if (inventoryChanged) {
                 // Increment kebbit counter
                 kebbitsHunted.incrementAndGet();
+                log.info("Successfully retrieved kebbit. Total: {}", kebbitsHunted.get());
+            }
 
-                // Reset state and mark current target as null
+            // Reset state and mark current target as null
+            currentState = State.CATCH;
+            currentTarget = null;
+            updateStateChangeTime();
+
+            // Short pause before looking for next kebbit
+            sleep(Rs2Random.between(400, 800));
+        } else {
+            log.warn("Failed to retrieve kebbit. Trying again...");
+            // If interaction fails, try again
+            sleep(Rs2Random.between(1000, 2000));
+
+            // After a few tries, reset to catch state
+            if (System.currentTimeMillis() - catchAttemptTime > 8000) {
                 currentState = State.CATCH;
                 currentTarget = null;
-
-                // Short pause before looking for next kebbit
-                sleep(Rs2Random.between(400, 800));
-            } else {
-                log.warn("Failed to retrieve kebbit. Trying again...");
-                // If interaction fails, try again
-                sleep(Rs2Random.between(1000, 2000));
+                updateStateChangeTime();
             }
         }
     }
@@ -234,6 +321,7 @@ public class KFalconryScript extends Script {
     private void handleBankingState() {
         // Walk to bank if not near bank
         if (Rs2Player.distanceTo(BANK_LOCATION) > 5) {
+            log.info("Walking to bank at {}", BANK_LOCATION);
             Rs2Walker.walkTo(BANK_LOCATION);
             sleep(Rs2Random.between(1000, 2000));
             return;
@@ -246,37 +334,47 @@ public class KFalconryScript extends Script {
             return;
         }
 
-        // Deposit all items except falcon and bird snares
-        Rs2Bank.depositAllExcept("Gyr Falcon", "Falconer's glove", "Bird snare", "Dramen staff", "Coins", "Graceful gloves", "Graceful hood", "Graceful cape", "Graceful top", "Graceful legs");
+        // Deposit all items except falcon and essential items
+        log.info("Depositing items");
+        Rs2Bank.depositAllExcept("Gyr Falcon", "Falconer's glove", "Bird snare", "Dramen staff",
+                "Coins", "Graceful gloves", "Graceful hood", "Graceful cape",
+                "Graceful top", "Graceful legs");
 
         sleep(Rs2Random.between(600, 1000));
         Rs2Bank.closeBank();
         sleep(Rs2Random.between(600, 1000));
 
         // Return to kebbit area
+        log.info("Returning to kebbit area");
         Rs2Walker.walkTo(KEBBIT_AREA_CENTER);
         sleep(Rs2Random.between(2000, 3000));
 
         // Reset state
         currentState = State.CATCH;
+        updateStateChangeTime();
     }
 
     private void handleDroppingState() {
+        log.info("Dropping items");
+
         // Drop all kebbit fur and bones
         for (String itemName : HUNT_ITEMS) {
-            Rs2Inventory.dropAll(itemName);
-            sleep(Rs2Random.between(300, 600));
+            if (Rs2Inventory.hasItem(itemName)) {
+                Rs2Inventory.dropAll(itemName);
+                sleep(Rs2Random.between(300, 600));
+            }
         }
 
         // Reset state
         currentState = State.CATCH;
         currentTarget = null;
+        updateStateChangeTime();
     }
 
     private void performIdleBehavior() {
         // Simulate a player taking a short break
         int idleAction = Rs2Random.between(0, 3);
-        int idleDuration = Rs2Random.between(3000, 15000);
+        int idleDuration = Rs2Random.between(3000, 8000);  // Shorter break duration
 
         switch (idleAction) {
             case 0: // Move camera slightly
@@ -285,63 +383,105 @@ public class KFalconryScript extends Script {
                 if (localPoint != null) {
                     Rs2Camera.turnTo(localPoint);
                 }
-                sleep(idleDuration);
                 break;
+
             case 1: // Just wait
-                sleep(idleDuration);
+                // Do nothing, just sleep
                 break;
+
             case 2: // Move to a nearby spot
                 WorldPoint nearbyPoint = new WorldPoint(
-                        Rs2Player.getWorldLocation().getX() + Rs2Random.between(-5, 5),
-                        Rs2Player.getWorldLocation().getY() + Rs2Random.between(-5, 5),
+                        Rs2Player.getWorldLocation().getX() + Rs2Random.between(-3, 3),
+                        Rs2Player.getWorldLocation().getY() + Rs2Random.between(-3, 3),
                         0
                 );
                 Rs2Walker.walkTo(nearbyPoint);
-                sleep(idleDuration);
                 break;
+
             case 3: // Look at stats
-                if (Rs2Random.between(0, 100) < 50) {
-                    openSkillsTab();
-                    sleep(idleDuration);
-                } else {
-                    sleep(idleDuration);
-                }
+                Rs2Tab.switchToSkillsTab();
                 break;
         }
+
+        sleep(idleDuration);
 
         // Return to catching
         currentState = State.CATCH;
+        updateStateChangeTime();
     }
 
-    private void openSkillsTab() {
-        // Fix for: Cannot resolve method 'switchToStatsTab' in 'Rs2Tab'
-        Rs2Tab.switchToSkillsTab();
-        sleep(Rs2Random.between(500, 1500));
-    }
+    private NPC findClosestKebbit(KFalconryConfig config) {
+        // Configuration for target kebbits
+        String targetKebbitsConfig = config.targetKebbits();
+        boolean preferClosest = config.preferClosestKebbit();
 
-    private NPC findClosestKebbit() {
-        // find all dark kebbits
-        Stream<Rs2NpcModel> darkKebbits = Rs2Npc.getNpcs(DARK_KEBBIT_ID);
-        // find all spotted kebbits
-        Stream<Rs2NpcModel> spottedKebbits = Rs2Npc.getNpcs(SPOTTED_KEBBIT_ID);
-        // find all dashing kebbits
-        Stream<Rs2NpcModel> dashingKebbits = Rs2Npc.getNpcs(DASHING_KEBBIT_ID);
+        // Get all kebbits
+        Stream<Rs2NpcModel> kebbitStream;
 
-        // Combine all kebbits into one list
-        List<NPC> allKebbits = Stream.concat(darkKebbits, Stream.concat(spottedKebbits, dashingKebbits))
-                .map(Rs2NpcModel::getRuneliteNpc)  // Use the proper getter method
-                .filter(Objects::nonNull)      // Ensure no null NPCs
+        // Filter kebbits based on config
+        if (targetKebbitsConfig.equalsIgnoreCase("All")) {
+            Stream<Rs2NpcModel> darkKebbits = Rs2Npc.getNpcs(DARK_KEBBIT_ID);
+            Stream<Rs2NpcModel> spottedKebbits = Rs2Npc.getNpcs(SPOTTED_KEBBIT_ID);
+            Stream<Rs2NpcModel> dashingKebbits = Rs2Npc.getNpcs(DASHING_KEBBIT_ID);
+            kebbitStream = Stream.concat(darkKebbits, Stream.concat(spottedKebbits, dashingKebbits));
+        } else if (targetKebbitsConfig.equalsIgnoreCase("Dark")) {
+            kebbitStream = Rs2Npc.getNpcs(DARK_KEBBIT_ID);
+        } else if (targetKebbitsConfig.equalsIgnoreCase("Spotted")) {
+            kebbitStream = Rs2Npc.getNpcs(SPOTTED_KEBBIT_ID);
+        } else if (targetKebbitsConfig.equalsIgnoreCase("Dashing")) {
+            kebbitStream = Rs2Npc.getNpcs(DASHING_KEBBIT_ID);
+        } else {
+            // Default to all if config is invalid
+            Stream<Rs2NpcModel> darkKebbits = Rs2Npc.getNpcs(DARK_KEBBIT_ID);
+            Stream<Rs2NpcModel> spottedKebbits = Rs2Npc.getNpcs(SPOTTED_KEBBIT_ID);
+            Stream<Rs2NpcModel> dashingKebbits = Rs2Npc.getNpcs(DASHING_KEBBIT_ID);
+            kebbitStream = Stream.concat(darkKebbits, Stream.concat(spottedKebbits, dashingKebbits));
+        }
+
+        List<NPC> allKebbits = kebbitStream
+                .map(Rs2NpcModel::getRuneliteNpc)
+                .filter(Objects::nonNull)
+                .filter(npc -> npc.getWorldLocation() != null)
+                .filter(npc -> npc.getWorldLocation().distanceTo(Rs2Player.getWorldLocation()) < 20)
                 .collect(Collectors.toList());
 
-        // Find the closest kebbit to the PLAYER (not to the area center)
         if (allKebbits.isEmpty()) {
+            log.debug("No kebbits found in area");
             return null;
         }
 
+        // Debug info
+        log.debug("Found {} kebbits in the area", allKebbits.size());
+
+        // Return the closest kebbit
         return allKebbits.stream()
                 .min(Comparator.comparingInt(npc ->
                         npc.getWorldLocation().distanceTo(Rs2Player.getWorldLocation())))
                 .orElse(null);
+    }
+
+    private void checkForStuckState() {
+        long currentTime = System.currentTimeMillis();
+        // If we've been in the same state for more than 30 seconds
+        if (currentTime - lastStateChange > 30000) {
+            stateStuckCount++;
+            log.warn("Potentially stuck in state {} for {} seconds. Count: {}",
+                    currentState, (currentTime - lastStateChange) / 1000, stateStuckCount);
+
+            // After 3 stuck occurrences, try to recover
+            if (stateStuckCount >= 3) {
+                log.warn("Script appears stuck. Attempting recovery by resetting state.");
+                currentState = State.CATCH;
+                currentTarget = null;
+                stateStuckCount = 0;
+                updateStateChangeTime();
+            }
+        }
+    }
+
+    private void updateStateChangeTime() {
+        lastStateChange = System.currentTimeMillis();
+        stateStuckCount = 0;
     }
 
     // Utility methods for overlay
@@ -418,14 +558,19 @@ public class KFalconryScript extends Script {
         Rs2AntibanSettings.moveMouseRandomly = true;
         Rs2AntibanSettings.microBreakDurationLow = 3;
         Rs2AntibanSettings.microBreakDurationHigh = 15;
-        Rs2AntibanSettings.actionCooldownChance = 0.4;
-        Rs2AntibanSettings.microBreakChance = 0.15;
-        Rs2AntibanSettings.moveMouseRandomlyChance = 0.1;
+        Rs2AntibanSettings.actionCooldownChance = 0.3;
+        Rs2AntibanSettings.microBreakChance = 0.05;
+        Rs2AntibanSettings.moveMouseRandomlyChance = 0.05;
     }
 
     public void shutdown() {
         log.info("Falconry script stopped. Total kebbits hunted: " + kebbitsHunted.get());
         log.info("Total XP gained: " + (Microbot.getClient().getSkillExperience(Skill.HUNTER) - startExperience));
-        executor.shutdown();
+        isRunning.set(false);
+        scriptStopped = true;
+
+        if (executor != null && !executor.isShutdown()) {
+            executor.shutdown();
+        }
     }
 }
