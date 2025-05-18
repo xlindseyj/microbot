@@ -87,7 +87,29 @@ public class KFalconryScript extends Script {
     }
 
     public boolean run(KFalconryConfig config) {
-        if (scriptStopped || !isRunning.get()) {
+        scriptStopped = false;
+
+        if (startTime == 0) {
+            startTime = System.currentTimeMillis();
+        }
+
+        if (startExperience == 0) {
+            startExperience = Microbot.getClient().getSkillExperience(Skill.HUNTER);
+        }
+
+        if (kebbitsHunted.get() == 0) {
+            kebbitsHunted.set(0);
+        }
+
+        if (currentState == null) {
+            currentState = State.CATCH;
+        }
+
+        if (catchAttemptTime == 0) {
+            catchAttemptTime = System.currentTimeMillis();
+        }
+
+        if (!isRunning.get()) {
             return false;
         }
 
@@ -136,34 +158,24 @@ public class KFalconryScript extends Script {
                 }
 
                 // Main script logic
+                // In your run() method where the switch statement is
                 switch (currentState) {
                     case CATCH:
-                        Microbot.status = "Catching kebbits";
                         handleCatchState(config);
                         break;
-
                     case RETRIEVE:
-                        Microbot.status = "Retrieving falcon";
                         handleRetrieveState();
                         break;
-
                     case BANKING:
-                        Microbot.status = "Banking items";
                         handleBankingState();
                         break;
-
                     case DROPPING:
-                        Microbot.status = "Dropping items";
                         handleDroppingState();
                         break;
-
                     case IDLE:
-                        Microbot.status = "Taking a short break";
                         performIdleBehavior();
                         break;
-
                     case MOVE_TO_AREA:
-                        Microbot.status = "Moving to kebbit area";
                         moveToKebbitsArea();
                         break;
                 }
@@ -231,8 +243,27 @@ public class KFalconryScript extends Script {
                 catchAttemptTime = System.currentTimeMillis();
                 Rs2Player.waitForAnimation(3000);
                 sleep(Rs2Random.between(600, 1200));
-                currentState = State.RETRIEVE;
-                updateStateChangeTime();
+                // If we catch the kebbit, move to retrieve state
+                log.info("Catching kebbit: {}", kebbit.getName());
+                currentTarget = kebbit;
+                Rs2Camera.turnTo(kebbit);
+                Rs2Npc.interact(kebbit.getName(), "Catch");
+                sleep(Rs2Random.between(600, 1200));
+
+                // Check if we caught the kebbit
+                // check the message box for success
+                if (Rs2Player.getAnimation() == -1) {
+                    log.info("Caught kebbit: {}", kebbit.getName());
+                    kebbitsHunted.incrementAndGet();
+                    currentState = State.RETRIEVE;
+                    updateStateChangeTime();
+                } else {
+                    log.warn("Failed to catch kebbit: {}", kebbit.getName());
+                    // If we failed to catch, reset target
+                    currentTarget = null;
+                    currentState = State.CATCH;
+                    updateStateChangeTime();
+                }
             } else {
                 // If interaction fails, move a bit and try again
                 WorldPoint movePoint = new WorldPoint(
@@ -251,19 +282,28 @@ public class KFalconryScript extends Script {
     }
 
     private void moveToKebbitsArea() {
-        int newX = KEBBIT_AREA_CENTER.getX() + Rs2Random.between(-SEARCH_RADIUS / 2, SEARCH_RADIUS / 2);
-        int newY = KEBBIT_AREA_CENTER.getY() + Rs2Random.between(-SEARCH_RADIUS / 2, SEARCH_RADIUS / 2);
-        WorldPoint randomPoint = new WorldPoint(newX, newY, 0);
+        // Log the current position
+        log.info("Moving to kebbit area from: " + Rs2Player.getWorldLocation());
 
-        log.info("Moving to position in kebbit area: {}", randomPoint);
-        Rs2Walker.walkTo(randomPoint);
+        // Walk directly to the kebbit area center
+        if (Rs2Walker.walkTo(KEBBIT_AREA_CENTER)) {
+            log.info("Walking to kebbit area center: " + KEBBIT_AREA_CENTER);
+            sleep(Rs2Random.between(1000, 2000));
+        } else {
+            // If path finding fails, try a more direct approach
+            log.warn("Path finding failed, trying direct movement");
+            Rs2Walker.walkTo(KEBBIT_AREA_CENTER);
+            sleep(Rs2Random.between(2000, 3000));
+        }
 
-        // Wait for movement to complete
-        sleep(Rs2Random.between(2000, 3000));
-
-        if (Rs2Player.distanceTo(randomPoint) < 5) {
+        // Once we're close enough to the kebbit area, switch back to CATCH state
+        if (Rs2Player.distanceTo(KEBBIT_AREA_CENTER) <= SEARCH_RADIUS) {
+            log.info("Reached kebbit area, switching to CATCH state");
             currentState = State.CATCH;
             updateStateChangeTime();
+        } else {
+            // If we're still not close enough, stay in MOVE_TO_AREA state
+            log.info("Still moving to kebbit area, distance: " + Rs2Player.distanceTo(KEBBIT_AREA_CENTER));
         }
     }
 
@@ -411,53 +451,37 @@ public class KFalconryScript extends Script {
     }
 
     private NPC findClosestKebbit(KFalconryConfig config) {
-        // Configuration for target kebbits
-        String targetKebbitsConfig = config.targetKebbits();
-        boolean preferClosest = config.preferClosestKebbit();
-
         // Get all kebbits
-        Stream<Rs2NpcModel> kebbitStream;
+        Stream<Rs2NpcModel> darkKebbits = Rs2Npc.getNpcs(DARK_KEBBIT_ID);
+        Stream<Rs2NpcModel> spottedKebbits = Rs2Npc.getNpcs(SPOTTED_KEBBIT_ID);
+        Stream<Rs2NpcModel> dashingKebbits = Rs2Npc.getNpcs(DASHING_KEBBIT_ID);
 
-        // Filter kebbits based on config
-        if (targetKebbitsConfig.equalsIgnoreCase("All")) {
-            Stream<Rs2NpcModel> darkKebbits = Rs2Npc.getNpcs(DARK_KEBBIT_ID);
-            Stream<Rs2NpcModel> spottedKebbits = Rs2Npc.getNpcs(SPOTTED_KEBBIT_ID);
-            Stream<Rs2NpcModel> dashingKebbits = Rs2Npc.getNpcs(DASHING_KEBBIT_ID);
-            kebbitStream = Stream.concat(darkKebbits, Stream.concat(spottedKebbits, dashingKebbits));
-        } else if (targetKebbitsConfig.equalsIgnoreCase("Dark")) {
-            kebbitStream = Rs2Npc.getNpcs(DARK_KEBBIT_ID);
-        } else if (targetKebbitsConfig.equalsIgnoreCase("Spotted")) {
-            kebbitStream = Rs2Npc.getNpcs(SPOTTED_KEBBIT_ID);
-        } else if (targetKebbitsConfig.equalsIgnoreCase("Dashing")) {
-            kebbitStream = Rs2Npc.getNpcs(DASHING_KEBBIT_ID);
-        } else {
-            // Default to all if config is invalid
-            Stream<Rs2NpcModel> darkKebbits = Rs2Npc.getNpcs(DARK_KEBBIT_ID);
-            Stream<Rs2NpcModel> spottedKebbits = Rs2Npc.getNpcs(SPOTTED_KEBBIT_ID);
-            Stream<Rs2NpcModel> dashingKebbits = Rs2Npc.getNpcs(DASHING_KEBBIT_ID);
-            kebbitStream = Stream.concat(darkKebbits, Stream.concat(spottedKebbits, dashingKebbits));
-        }
-
-        List<NPC> allKebbits = kebbitStream
-                .map(Rs2NpcModel::getRuneliteNpc)
+        // Combine all kebbits into one list
+        List<NPC> allKebbits = Stream.concat(darkKebbits, Stream.concat(spottedKebbits, dashingKebbits))
+                .map(Rs2NpcModel::getRuneliteNpc)  // Make sure this getter method exists
                 .filter(Objects::nonNull)
-                .filter(npc -> npc.getWorldLocation() != null)
-                .filter(npc -> npc.getWorldLocation().distanceTo(Rs2Player.getWorldLocation()) < 20)
                 .collect(Collectors.toList());
 
+        // Debug information
+        log.info("Found {} kebbits in total", allKebbits.size());
+
         if (allKebbits.isEmpty()) {
-            log.debug("No kebbits found in area");
             return null;
         }
 
-        // Debug info
-        log.debug("Found {} kebbits in the area", allKebbits.size());
-
-        // Return the closest kebbit
-        return allKebbits.stream()
+        // Find closest kebbit
+        NPC closestKebbit = allKebbits.stream()
                 .min(Comparator.comparingInt(npc ->
                         npc.getWorldLocation().distanceTo(Rs2Player.getWorldLocation())))
                 .orElse(null);
+
+        if (closestKebbit != null) {
+            log.info("Found closest kebbit: {} at distance {}",
+                    closestKebbit.getName(),
+                    closestKebbit.getWorldLocation().distanceTo(Rs2Player.getWorldLocation()));
+        }
+
+        return closestKebbit;
     }
 
     private void checkForStuckState() {
