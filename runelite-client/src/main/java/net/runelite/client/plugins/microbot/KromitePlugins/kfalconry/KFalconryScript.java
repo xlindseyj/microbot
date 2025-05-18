@@ -14,12 +14,14 @@ import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
 import net.runelite.client.plugins.microbot.util.npc.Rs2Npc;
 import net.runelite.client.plugins.microbot.util.npc.Rs2NpcModel;
 import net.runelite.client.plugins.microbot.util.player.Rs2Player;
+import net.runelite.client.plugins.microbot.util.player.Rs2PlayerModel;
 import net.runelite.client.plugins.microbot.util.walker.Rs2Walker;
 import net.runelite.client.plugins.microbot.util.antiban.Rs2AntibanSettings;
 import net.runelite.client.plugins.microbot.util.math.Rs2Random;
 import net.runelite.client.plugins.microbot.util.tabs.Rs2Tab;
 
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
@@ -42,6 +44,7 @@ public class KFalconryScript extends Script {
     private ExecutorService executor = Executors.newSingleThreadExecutor();
 
     private static final WorldPoint FALCONRY_AREA_CENTER = new WorldPoint(2371, 3619, 0);
+    private static final WorldPoint KEBBIT_AREA_CENTER = new WorldPoint(2371, 3599, 0);
     private static final int SEARCH_RADIUS = 15;
 
     // Bank location near falconry
@@ -75,12 +78,21 @@ public class KFalconryScript extends Script {
         executor.submit(() -> {
             try {
                 if (!Microbot.isLoggedIn()) return;
-                if (!isRunning()) return;
+                // if (!isRunning()) return;
 
                 // Check if we're in the falconry area
                 if (Rs2Player.distanceTo(FALCONRY_AREA_CENTER) > 50 && currentState != State.BANKING) {
                     log.warn("Not in falconry area. Please teleport to the Piscatoris Hunter area.");
                     Microbot.status = "Not in falconry area";
+                    return;
+                }
+
+                // Check player has a falcon
+                if (Rs2Inventory.hasItem("Falconer's glove") || Rs2Player.hasPlayerEquippedItem(Rs2Player.getLocalPlayer(), "Falconer's glove")) {
+                    log.info("Player has a falcon.");
+                } else {
+                    log.warn("Player does not have a falcon. Please obtain one.");
+                    Microbot.status = "No falcon found";
                     return;
                 }
 
@@ -161,20 +173,26 @@ public class KFalconryScript extends Script {
             currentTarget = kebbit;
             log.info("Found kebbit to hunt: " + kebbit.getName());
 
-            // Fix for: Cannot resolve method 'interact(NPC, String, boolean)'
+            // Walk to kebbit if needed
+            if (Rs2Player.distanceTo(kebbit.getWorldLocation()) > 7) {
+                Rs2Walker.walkTo(kebbit.getWorldLocation());
+                sleep(Rs2Random.between(600, 1200));
+            }
+
+            // Interact with kebbit
             if (Rs2Npc.interact(kebbit.getName(), "Catch")) {
                 Rs2Player.waitForAnimation();
                 sleep(Rs2Random.between(600, 1200));
                 currentState = State.RETRIEVE;
             }
         } else {
-            // If no kebbit found, move to a random position in the area to find one
-            WorldPoint randomPoint = new WorldPoint(
-                    FALCONRY_AREA_CENTER.getX() + Rs2Random.between(-SEARCH_RADIUS, SEARCH_RADIUS),
-                    FALCONRY_AREA_CENTER.getY() + Rs2Random.between(-SEARCH_RADIUS, SEARCH_RADIUS),
-                    0
-            );
+            // If no kebbit found, move to a random position in the KEBBIT area
+            int newX = KEBBIT_AREA_CENTER.getX() + Rs2Random.between(-SEARCH_RADIUS, SEARCH_RADIUS);
+            int newY = KEBBIT_AREA_CENTER.getY() + Rs2Random.between(-SEARCH_RADIUS, SEARCH_RADIUS);
+            WorldPoint randomPoint = new WorldPoint(newX, newY, 0);
 
+            // Walking directly to the point
+            Microbot.status = "Walking to kebbit area";
             Rs2Walker.walkTo(randomPoint);
             sleep(Rs2Random.between(1500, 3000));
         }
@@ -229,14 +247,14 @@ public class KFalconryScript extends Script {
         }
 
         // Deposit all items except falcon and bird snares
-        Rs2Bank.depositAllExcept("Gyr Falcon", "Bird snare", "Dramen staff");
+        Rs2Bank.depositAllExcept("Gyr Falcon", "Falconer's glove", "Bird snare", "Dramen staff", "Coins", "Graceful gloves", "Graceful hood", "Graceful cape", "Graceful top", "Graceful legs");
 
         sleep(Rs2Random.between(600, 1000));
         Rs2Bank.closeBank();
         sleep(Rs2Random.between(600, 1000));
 
-        // Return to falconry area
-        Rs2Walker.walkTo(FALCONRY_AREA_CENTER);
+        // Return to kebbit area
+        Rs2Walker.walkTo(KEBBIT_AREA_CENTER);
         sleep(Rs2Random.between(2000, 3000));
 
         // Reset state
@@ -252,6 +270,7 @@ public class KFalconryScript extends Script {
 
         // Reset state
         currentState = State.CATCH;
+        currentTarget = null;
     }
 
     private void performIdleBehavior() {
@@ -310,30 +329,19 @@ public class KFalconryScript extends Script {
 
         // Combine all kebbits into one list
         List<NPC> allKebbits = Stream.concat(darkKebbits, Stream.concat(spottedKebbits, dashingKebbits))
-                .map(model -> model.getRuneliteNpc())  // Use the proper getter method
+                .map(Rs2NpcModel::getRuneliteNpc)  // Use the proper getter method
                 .filter(Objects::nonNull)      // Ensure no null NPCs
                 .collect(Collectors.toList());
 
-        // Filter kebbits within the search radius
-        allKebbits.removeIf(kebbit -> kebbit.getWorldLocation().distanceTo(FALCONRY_AREA_CENTER) > SEARCH_RADIUS);
+        // Find the closest kebbit to the PLAYER (not to the area center)
         if (allKebbits.isEmpty()) {
             return null;
         }
 
-        // Find the closest kebbit
-        NPC closestKebbit = allKebbits.get(0);
-        for (NPC kebbit : allKebbits) {
-            if (kebbit.getWorldLocation().distanceTo(FALCONRY_AREA_CENTER) < closestKebbit.getWorldLocation().distanceTo(FALCONRY_AREA_CENTER)) {
-                closestKebbit = kebbit;
-            }
-        }
-
-        // Check if the closest kebbit is already being hunted
-        if (currentTarget != null && currentTarget.getId() == closestKebbit.getId()) {
-            return null;
-        }
-
-        return closestKebbit;
+        return allKebbits.stream()
+                .min(Comparator.comparingInt(npc ->
+                        npc.getWorldLocation().distanceTo(Rs2Player.getWorldLocation())))
+                .orElse(null);
     }
 
     // Utility methods for overlay

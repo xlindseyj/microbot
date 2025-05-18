@@ -35,6 +35,7 @@ public class KFalconryPlugin extends Plugin {
     private KFalconryScript script;
     private boolean running = false;
     private boolean initialized = false;
+    private boolean scriptInitialized = false;
 
     @Provides
     KFalconryConfig provideConfig(ConfigManager configManager) {
@@ -53,8 +54,23 @@ public class KFalconryPlugin extends Plugin {
         overlayManager.add(overlay);
         keyManager.registerKeyListener(hotkeyListener);
         script = new KFalconryScript();
+
+        if (script == null) {
+            log.error("Failed to initialize Kromite's Falconry script");
+            stopScript();
+            return;
+        }
+
         initialized = true;
-        log.info("Kromite's Falconry plugin started");
+        scriptInitialized = script.onStart();
+
+        if (!scriptInitialized) {
+            log.error("Failed to start Kromite's Falconry plugin");
+            stopScript();
+        } else {
+            startScript();
+            log.info("Kromite's Falconry plugin started");
+        }
     }
 
     @Override
