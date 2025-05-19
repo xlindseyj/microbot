@@ -1,11 +1,9 @@
-package net.runelite.client.plugins.microbot.bee.salamanders;
+package net.runelite.client.plugins.microbot.TaF.DeadFallTrapHunter;
 
 import com.google.inject.Provides;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
-import net.runelite.api.coords.Angle;
-import net.runelite.api.coords.Direction;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.ChatMessage;
@@ -17,7 +15,6 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.hunter.HunterTrap;
-import net.runelite.client.plugins.microbot.magic.orbcharger.enums.OrbChargerState;
 import net.runelite.client.plugins.microbot.util.misc.TimeUtils;
 import net.runelite.client.ui.overlay.OverlayManager;
 
@@ -29,49 +26,49 @@ import java.util.Map;
 
 @Slf4j
 @PluginDescriptor(
-        name = PluginDescriptor.TaFCat + "Salamanders",
-        description = "Automates salamander hunting",
-        tags = {"hunter", "salamanders", "skilling"},
+        name = PluginDescriptor.TaFCat + "Deadfall Trap Hunter",
+        description = "Automates hunting all creatures with Deadfall traps",
+        tags = {"hunter", "deadfall", "skilling", "xp", "loot", "TaF"},
         enabledByDefault = false
 )
-public class SalamanderPlugin extends Plugin {
+public class DeadFallTrapHunterPlugin extends Plugin {
 
     @Getter
     private final Map<WorldPoint, HunterTrap> traps = new HashMap<>();
     @Inject
     private Client client;
     @Inject
-    private SalamanderConfig config;
+    private DeadFallTrapHunterConfig config;
     @Inject
     private OverlayManager overlayManager;
     @Inject
-    private SalamanderOverlay salamanderOverlay;
-    private SalamanderScript script;
-    private SalamanderGroundItemLooter looter;
+    private DeadFallTrapHunterOverlay deadFallTrapHunterOverlay;
+    private DeadFallTrapHunterScript script;
+    private DeadFallTrapInventoryHandlerScript looter;
     private WorldPoint lastTickLocalPlayerLocation;
     private Instant scriptStartTime;
 
     @Provides
-    SalamanderConfig provideConfig(ConfigManager configManager) {
-        return configManager.getConfig(SalamanderConfig.class);
+    DeadFallTrapHunterConfig provideConfig(ConfigManager configManager) {
+        return configManager.getConfig(DeadFallTrapHunterConfig.class);
     }
 
     @Override
     protected void startUp() throws Exception {
-        log.info("Salamander Plugin started!");
+        log.info("Deadfall hunter plugin started!");
         scriptStartTime = Instant.now();
-        overlayManager.add(salamanderOverlay);
-        script = new SalamanderScript();
+        overlayManager.add(deadFallTrapHunterOverlay);
+        script = new DeadFallTrapHunterScript();
         script.run(config, this);
-        looter = new SalamanderGroundItemLooter();
+        looter = new DeadFallTrapInventoryHandlerScript();
         looter.run(config, script);
     }
 
     @Override
     protected void shutDown() throws Exception {
-        log.info("Salamander Plugin stopped!");
+        log.info("Deadfall hunter plugin stopped!");
         scriptStartTime = null;
-        overlayManager.remove(salamanderOverlay);
+        overlayManager.remove(deadFallTrapHunterOverlay);
         if (script != null) {
             script.shutdown();
             looter.shutdown();
@@ -89,65 +86,46 @@ public class SalamanderPlugin extends Plugin {
         final HunterTrap myTrap = traps.get(trapLocation);
         final Player localPlayer = client.getLocalPlayer();
         switch (gameObject.getId()) {
-            case ObjectID.HUNTING_SAPLING_NET_SET_SWAMP: // Net trap placed at Green salamanders
-            case ObjectID.HUNTING_SAPLING_NET_SET_ORANGE: // Net trap placed at Orange salamanders
-            case ObjectID.HUNTING_SAPLING_NET_SET_RED: // Net trap placed at Red salamanders
-            case ObjectID.HUNTING_SAPLING_NET_SET_BLACK: // Net trap placed at Black salamanders
-            case ObjectID.HUNTING_SAPLING_NET_SET_MOUNTAIN: // Net trap placed at Tecu salamanders
-                if (lastTickLocalPlayerLocation != null
-                        && trapLocation.distanceTo(lastTickLocalPlayerLocation) == 0) {
-                    // Net traps facing to the north and east must have their tile translated.
-                    // As otherwise, the wrong tile is stored.
-                    Direction trapOrientation = new Angle(gameObject.getOrientation()).getNearestDirection();
-                    WorldPoint translatedTrapLocation = trapLocation;
-
-                    switch (trapOrientation) {
-                        case SOUTH:
-                            translatedTrapLocation = trapLocation.dy(-1);
-                            break;
-                        case WEST:
-                            translatedTrapLocation = trapLocation.dx(-1);
-                            break;
-                    }
-
-                    log.debug("Trap placed by \"{}\" on {} facing {}", localPlayer.getName(), translatedTrapLocation, trapOrientation);
-                    traps.put(translatedTrapLocation, new HunterTrap(gameObject));
+            /*
+             * ------------------------------------------------------------------------------
+             * Placing traps
+             * ------------------------------------------------------------------------------
+             */
+            case ObjectID.HUNTING_DEADFALL_TRAP: // Deadfall trap placed
+            case ObjectID.HUNTING_MONKEYTRAP_SET: // Maniacal monkey trap placed
+                // If player is right next to "object" trap assume that player placed the trap
+                if (localPlayer.getWorldLocation().distanceTo(trapLocation) <= 2) {
+                    log.debug("Trap placed by \"{}\" on {}", localPlayer.getName(), trapLocation);
+                    traps.put(trapLocation, new HunterTrap(gameObject));
                 }
                 break;
-
-            case ObjectID.HUNTING_SAPLING_FULL_GREEN: // Green salamander caught
-            case ObjectID.HUNTING_SAPLING_FULL_RED: // Red salamander caught
-            case ObjectID.HUNTING_SAPLING_FULL_ORANGE: // Orange salamander caught
-            case ObjectID.HUNTING_SAPLING_FULL_BLACK: // Black salamander caught
-            case ObjectID.HUNTING_SAPLING_FULL_MOUNTAIN: // Tecu salamander caught
+            case ObjectID.HUNTING_DEADFALL_FULL_SPIKE: // Prickly kebbit caught
+            case ObjectID.HUNTING_DEADFALL_FULL_SABRE: // Sabre-tooth kebbit caught
+            case ObjectID.HUNTING_DEADFALL_FULL_BARBED: // Barb-tailed kebbit caught
+            case ObjectID.HUNTING_DEADFALL_FULL_CLAW: // Wild kebbit caught
+            case ObjectID.HUNTING_DEADFALL_FULL_FENNEC: // Pyre fox caught
                 if (myTrap != null) {
                     myTrap.setState(HunterTrap.State.FULL);
                     myTrap.resetTimer();
-
-                    if (myTrap.getObjectId() == ObjectID.HUNTING_MONKEYTRAP_SET) {
-                        //notifier.notify(config.maniacalMonkeyNotify(), "You've caught part of a monkey's tail.");
-                    }
                 }
 
                 break;
-            case ObjectID.HUNTING_SAPLING_FAILED_MOUNTAIN: //Empty net trap
+            case ObjectID.HUNTING_DEADFALL_BOULDER: //Empty deadfall trap
                 if (myTrap != null) {
                     myTrap.setState(HunterTrap.State.EMPTY);
                     myTrap.resetTimer();
                 }
 
                 break;
-            // Net trap
-            case ObjectID.HUNTING_SAPLING_CATCHING_GREEN:
-            case ObjectID.HUNTING_SAPLING_FAILING_SWAMP:
-            case ObjectID.HUNTING_SAPLING_CATCHING_ORANGE:
-            case ObjectID.HUNTING_SAPLING_FAILING_ORANGE:
-            case ObjectID.HUNTING_SAPLING_CATCHING_RED:
-            case ObjectID.HUNTING_SAPLING_FAILING_RED:
-            case ObjectID.HUNTING_SAPLING_CATCHING_BLACK:
-            case ObjectID.HUNTING_SAPLING_FAILING_BLACK:
-            case ObjectID.HUNTING_SAPLING_CATCHING_MOUNTAIN:
-            case ObjectID.HUNTING_SAPLING_FAILING_MOUNTAIN:
+            // Deadfall trap
+            case ObjectID.HUNTING_DEADFALL_TRAPPING_SPIKE:
+            case ObjectID.HUNTING_DEADFALL_TRAPPING_SABRE:
+            case ObjectID.HUNTING_DEADFALL_TRAPPING_SABRE_M:
+            case ObjectID.HUNTING_DEADFALL_TRAPPING_BARBED:
+            case ObjectID.HUNTING_DEADFALL_TRAPPING_BARBED_M:
+            case ObjectID.HUNTING_DEADFALL_TRAPPING_CLAW:
+            case ObjectID.HUNTING_DEADFALL_TRAPPING_FENNEC:
+            case ObjectID.HUNTING_DEADFALL_TRAPPING_FENNEC_M:
                 if (myTrap != null) {
                     myTrap.setState(HunterTrap.State.TRANSITION);
                 }
@@ -159,6 +137,9 @@ public class SalamanderPlugin extends Plugin {
     public void onChatMessage(ChatMessage event) {
         if (event.getType() == ChatMessageType.GAMEMESSAGE && event.getMessage().equalsIgnoreCase("oh dear, you are dead!")) {
             script.hasDied = true;
+        }
+        if (event.getType() == ChatMessageType.GAMEMESSAGE && event.getMessage().contains("You don't have enough inventory space. You need")) {
+            script.forceBank = true;
         }
     }
 

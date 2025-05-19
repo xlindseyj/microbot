@@ -1,4 +1,4 @@
-package net.runelite.client.plugins.microbot.bee.salamanders;
+package net.runelite.client.plugins.microbot.TaF.DeadFallTrapHunter;
 
 import net.runelite.api.Client;
 import net.runelite.api.Skill;
@@ -10,15 +10,15 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
 import javax.inject.Inject;
 import java.awt.*;
 
-public class SalamanderOverlay extends OverlayPanel {
+public class DeadFallTrapHunterOverlay extends OverlayPanel {
     private final Client client;
-    private final SalamanderConfig config;
-    private final SalamanderPlugin plugin;
-    private final SalamanderScript script;
+    private final DeadFallTrapHunterConfig config;
+    private final DeadFallTrapHunterPlugin plugin;
+    private final DeadFallTrapHunterScript script;
     private int startingLevel = 0;
 
     @Inject
-    public SalamanderOverlay(Client client, SalamanderConfig config, SalamanderPlugin plugin, SalamanderScript script) {
+    public DeadFallTrapHunterOverlay(Client client, DeadFallTrapHunterConfig config, DeadFallTrapHunterPlugin plugin, DeadFallTrapHunterScript script) {
         super(plugin);
         this.client = client;
         this.config = config;
@@ -43,7 +43,7 @@ public class SalamanderOverlay extends OverlayPanel {
 
         // Title with version
         panelComponent.getChildren().add(TitleComponent.builder()
-                .text("Salamander Hunter by Bee & TaF")
+                .text("Deadfall creature hunter by TaF")
                 .color(Color.GREEN)
                 .build());
 
@@ -64,30 +64,28 @@ public class SalamanderOverlay extends OverlayPanel {
                 .rightColor(Color.ORANGE)
                 .build());
 
-        // Salamander type
-        if (config.salamanderHunting() != null) {
+        if (config.deadFallTrapHunting() != null) {
             panelComponent.getChildren().add(LineComponent.builder()
                     .left("Hunting:")
-                    .right(config.salamanderHunting().getName())
+                    .right(config.deadFallTrapHunting().getName())
                     .leftColor(Color.WHITE)
                     .rightColor(Color.YELLOW)
                     .build());
         }
 
         // Traps information
-        int maxTraps = script.getMaxTrapsForHunterLevel(config);
         int currentTraps = plugin.getTraps().size();
         panelComponent.getChildren().add(LineComponent.builder()
                 .left("Traps:")
-                .right(currentTraps + "/" + maxTraps)
+                .right(String.valueOf(currentTraps))
                 .leftColor(Color.WHITE)
-                .rightColor(currentTraps == maxTraps ? Color.GREEN : Color.CYAN)
+                .rightColor(currentTraps > 0 ? Color.GREEN : Color.CYAN)
                 .build());
 
         // Statistics
         panelComponent.getChildren().add(LineComponent.builder()
-                .left("Salamanders Caught:")
-                .right(String.valueOf(SalamanderScript.SalamandersCaught))
+                .left("Creatures Caught:")
+                .right(String.valueOf(DeadFallTrapHunterScript.creaturesCaught))
                 .leftColor(Color.WHITE)
                 .rightColor(Color.GREEN)
                 .build());
