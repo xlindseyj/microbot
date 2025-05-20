@@ -48,10 +48,20 @@ public interface KPOHConfig extends Config {
     }
 
     @ConfigItem(
+        keyName = "showPaint",
+        name = "Show Paint",
+        description = "Show the paint overlay.",
+        position = 4
+    )
+    default boolean showPaint() {
+        return true;
+    }
+
+    @ConfigItem(
         keyName = "debug",
         name = "Debug",
         description = "Enable debug mode.",
-        position = 4
+        position = 5
     )
     default boolean debug() {
         return false;

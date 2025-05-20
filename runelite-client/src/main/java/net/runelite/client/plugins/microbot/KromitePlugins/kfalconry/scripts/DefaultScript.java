@@ -452,7 +452,7 @@ public class DefaultScript extends Script {
 
             // Combine all kebbits into one list
             List<NPC> allKebbits = Stream.concat(darkKebbits, Stream.concat(spottedKebbits, dashingKebbits))
-                    .map(Rs2NpcModel::getRuneliteNpc) 
+                    .map(Rs2NpcModel::getNpc)
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
 

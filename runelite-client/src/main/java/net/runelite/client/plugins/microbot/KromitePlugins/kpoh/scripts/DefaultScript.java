@@ -42,6 +42,79 @@ public class DefaultScript extends Script {
 
     public static KPOHState state = KPOHState.IDLE;
 
+    public boolean run(KPOHConfig config) {
+        blacklistNames = new ArrayList<>();
+
+        if (config.antiban()) {
+            applyAntiBanSettings();
+        }
+
+        mainScheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(() -> {
+            try {
+                if (!Microbot.isLoggedIn()) return;
+                if (!super.run()) {
+                    return;
+                }
+
+                // Pre-check validations
+                if (!validateInventory()) {
+                    return;
+                }
+
+                if (Microbot.isGainingExp) return;
+
+                calculateState();
+                executeCurrentState();
+
+            } catch (Exception ex) {
+                System.out.println(ex.getMessage());
+            }
+        }, 0, 1000, TimeUnit.MILLISECONDS);
+        return true;
+    }
+
+    private boolean validateInventory() {
+        if (!Rs2Inventory.hasItem(995)) {
+            Microbot.showMessage("No gp found in your inventory");
+            shutdown();
+            return false;
+        }
+
+        if (!hasNotedBones() && !hasUnNotedBones()) {
+            Microbot.showMessage("No bones found in your inventory");
+            shutdown();
+            return false;
+        }
+
+        return true;
+    }
+
+    private void executeCurrentState() {
+        Microbot.status = "State: " + state.name();
+
+        switch (state) {
+            case LEAVE_HOUSE:
+                leaveHouse();
+                break;
+            case UNNOTE_BONES:
+                unnoteBones();
+                break;
+            case ENTER_HOUSE:
+                enterHouse();
+                break;
+            case BONES_ON_ALTAR:
+                bonesOnAltar();
+                break;
+            case ANTIBAN:
+                performAntiBan();
+                break;
+            case IDLE:
+            default:
+                // Do nothing in IDLE state
+                break;
+        }
+    }
+
     private boolean inHouse() {
         return getPhials() == null;
     }
@@ -179,6 +252,12 @@ public class DefaultScript extends Script {
         boolean inHouse = inHouse();
         boolean hasUnNotedBones = hasUnNotedBones();
 
+        // Randomly trigger antiban state
+        if (Rs2Random.between(0, 100) < 5) {
+            state = KPOHState.ANTIBAN;
+            return;
+        }
+
         if (hasUnNotedBones) {
             state = inHouse ? KPOHState.BONES_ON_ALTAR : KPOHState.ENTER_HOUSE;
         } else {
@@ -186,56 +265,11 @@ public class DefaultScript extends Script {
         }
     }
 
-
-    public boolean run(KPOHConfig config) {
-        blacklistNames = new ArrayList<>();
-        mainScheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(() -> {
-            try {
-                if (!Microbot.isLoggedIn()) return;
-                if (!super.run()) {
-                    return;
-                }
-                if (!Rs2Inventory.hasItem(995)) {
-                    Microbot.showMessage("No gp found in your inventory");
-                    shutdown();
-                    return;
-                }
-                if (!hasNotedBones() && !hasUnNotedBones()) {
-                    Microbot.showMessage("No bones found in your inventory");
-                    shutdown();
-                    return;
-                }
-
-                if (Microbot.isGainingExp) return;
-
-                calculateState();
-
-                switch (state) {
-                    case LEAVE_HOUSE:
-                        leaveHouse();
-                        break;
-                    case UNNOTE_BONES:
-                        unnoteBones();
-                        break;
-                    case ENTER_HOUSE:
-                        enterHouse();
-                        break;
-                    case BONES_ON_ALTAR:
-                        bonesOnAltar();
-                        break;
-                }
-            } catch (Exception ex) {
-                System.out.println(ex.getMessage());
-            }
-        }, 0, 1000, TimeUnit.MILLISECONDS);
-        return true;
-    }
-
     public void leaveHouse() {
         System.out.println("Attempting to leave house...");
 
         // We should only rely on using the settings menu if the portal is several rooms away from the portal. Bringing up 3 different interfaces when we can see the portal on screen is unnecessary.
-        if (usePortal) {
+        if (usePortal != null && usePortal) {
             int HOUSE_PORTAL_OBJECT = 4525;
             TileObject portalObject = Rs2GameObject.findObjectById(HOUSE_PORTAL_OBJECT);
             if (portalObject == null) {
@@ -251,8 +285,7 @@ public class DefaultScript extends Script {
         Rs2Tab.switchToSettingsTab();
         sleep(1200);
 
-
-        //If the house options button is not visible, player is on Display or Sound settings, need to click Controls.
+        // If the house options button is not visible, player is on Display or Sound settings, need to click Controls.
         if (!(Rs2Widget.isWidgetVisible(7602207))){
             Rs2Widget.clickWidget(7602243);
             sleep(600);
@@ -262,7 +295,7 @@ public class DefaultScript extends Script {
         if (Rs2Widget.clickWidget(7602207)) {
             sleep(1200);
         } else {
-            System.out.println("House Options button not found.");
+            System.out.println("House options button not found.");
             return;
         }
 
@@ -312,7 +345,7 @@ public class DefaultScript extends Script {
         Widget containerEnter = Rs2Widget.getWidget(52, 19);
         if (containerNames == null || containerNames.getChildren() == null) return;
 
-        //Sort house advertisements by Gilded Altar availability
+        // Sort house advertisements by Gilded Altar availability
         Widget toggleArrow = Rs2Widget.getWidget(3407877);
         if (toggleArrow.getSpriteId() == 1050) {
             Rs2Widget.clickWidget(3407877);
@@ -327,7 +360,7 @@ public class DefaultScript extends Script {
 
             for (int i = 0; i < children.length; i++) {
                 Widget child = children[i];
-                if (child.getText() == null || child.getText().isEmpty()|| child.getText() == ""){
+                if (child.getText() == null || child.getText().isEmpty() || child.getText() == ""){
                     continue;
                 }
                 if (child.getText() != null) {
@@ -362,7 +395,7 @@ public class DefaultScript extends Script {
     }
 
     public void bonesOnAltar() {
-        if(portalCoords == null){
+        if (portalCoords == null){
             portalCoords = Rs2Player.getWorldLocation();
         }
 
@@ -380,18 +413,57 @@ public class DefaultScript extends Script {
         Rs2Inventory.useUnNotedItemOnObject("bones", altar);
         Rs2Player.waitForAnimation();
 
-        // Use bones on the altar if it's valid
-        if(altarCoords == null){
+        if (altarCoords == null) {
             altarCoords = Rs2Player.getWorldLocation();
         }
-        // If portal is more than 10 tiles from altar, use settings menu to leave. Else, just walk back to portal.
-        if(usePortal == null){
+
+        if (usePortal == null) {
             usePortal = altarCoords.distanceTo(portalCoords) <= 10;
         }
     }
 
+    private void performAntiBan() {
+        // Simple antiban actions
+        int randomAction = Rs2Random.between(0, 4);
+
+        switch (randomAction) {
+            case 0:
+                // Move mouse randomly
+                Rs2Walker.walkTo(new WorldPoint(
+                        Rs2Player.getWorldLocation().getX() + Rs2Random.between(-3, 3),
+                        Rs2Player.getWorldLocation().getY() + Rs2Random.between(-3, 3),
+                        0
+                ));
+                break;
+            case 1:
+                // Open a tab
+                Rs2Tab.switchToInventoryTab();
+                sleep(600, 1200);
+                break;
+            case 2:
+                // Check skills
+                Rs2Tab.switchToSkillsTab();
+                sleep(1000, 2000);
+                Rs2Tab.switchToInventoryTab();
+                break;
+            case 3:
+                // Short pause
+                sleep(1500, 3500);
+                break;
+            default:
+                // Do nothing special
+                break;
+        }
+
+        // Return to normal state calculation
+        calculateState();
+    }
+
     public void addNameToBlackList() {
-        blacklistNames.add(houseOwner);
+        if (houseOwner != null && !houseOwner.isEmpty()) {
+            blacklistNames.add(houseOwner);
+            System.out.println("Blacklisted house owner: " + houseOwner);
+        }
     }
 
     private void applyAntiBanSettings() {
@@ -407,8 +479,8 @@ public class DefaultScript extends Script {
         Rs2AntibanSettings.dynamicIntensity = true;
         Rs2AntibanSettings.devDebug = false;
         Rs2AntibanSettings.moveMouseRandomly = true;
-        Rs2AntibanSettings.microBreakDurationLow = 3;
-        Rs2AntibanSettings.microBreakDurationHigh = 15;
+        Rs2AntibanSettings.microBreakDurationLow = 1;
+        Rs2AntibanSettings.microBreakDurationHigh = 3;
         Rs2AntibanSettings.actionCooldownChance = 0.4;
         Rs2AntibanSettings.microBreakChance = 0.15;
         Rs2AntibanSettings.moveMouseRandomlyChance = 0.1;
