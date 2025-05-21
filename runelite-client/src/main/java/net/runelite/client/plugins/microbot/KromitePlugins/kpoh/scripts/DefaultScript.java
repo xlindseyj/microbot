@@ -47,7 +47,7 @@ public class DefaultScript extends Script {
     public static KPOHConfig config;
 
     public boolean run(KPOHConfig config) {
-        blacklistNames = new ArrayList<>();
+        blacklistNames.add("V 3");
         whitelistNames.add("xGrace");
         whitelistNames.add("RunePolitics");
 
@@ -333,7 +333,15 @@ public class DefaultScript extends Script {
     private void enterHouse() {
         // If we've already visited a house this session, use 'Visit-Last' on advertisement board
         if (visitedOnce) {
-            Rs2GameObject.interact(ObjectID.HOUSE_ADVERTISEMENT, "Visit-Last");
+            try {
+                Rs2GameObject.interact(ObjectID.HOUSE_ADVERTISEMENT, "Visit-Last");
+            } catch (Exception e) {
+                Microbot.log("Error interacting with advertisement board: " + e.getMessage());
+                addNameToBlackList();
+                visitedOnce = false;
+                houseOwner = null;
+                return;
+            }
             sleep(2400, 3000);
             return;
         }
@@ -585,10 +593,8 @@ public class DefaultScript extends Script {
     }
 
     public void addNameToBlackList() {
-        if (houseOwner != null && !houseOwner.isEmpty()) {
-            blacklistNames.add(houseOwner);
-            Microbot.log("Blacklisted house owner: " + houseOwner);
-        }
+        blacklistNames.add(houseOwner);
+        Microbot.log("Blacklisted house owner: " + houseOwner);
     }
 
     private void applyAntiBanSettings() {
