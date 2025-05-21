@@ -63,7 +63,7 @@ public class KPOHPlugin extends Plugin {
         if (
             chatMsg.contains("that player is offline") || chatMsg.contains("haven't visited anyone this session") || chatMsg.contains("house is no longer accessible")
         ) {
-            kpohScript.visitedOnce= false;
+            kpohScript.visitedOnce = false;
             kpohScript.usePortal = null;
             kpohScript.altarCoords = null;
             kpohScript.portalCoords = null;
