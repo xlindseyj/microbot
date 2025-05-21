@@ -13,6 +13,7 @@ import net.runelite.client.plugins.microbot.Script;
 import net.runelite.client.plugins.microbot.util.antiban.Rs2AntibanSettings;
 import net.runelite.client.plugins.microbot.util.gameobject.Rs2GameObject;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
+import net.runelite.client.plugins.microbot.util.inventory.Rs2ItemModel;
 import net.runelite.client.plugins.microbot.util.keyboard.Rs2Keyboard;
 import net.runelite.client.plugins.microbot.util.math.Rs2Random;
 import net.runelite.client.plugins.microbot.util.menu.NewMenuEntry;
@@ -27,6 +28,7 @@ import net.runelite.client.plugins.microbot.util.widget.Rs2Widget;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class DefaultScript extends Script {
@@ -39,11 +41,15 @@ public class DefaultScript extends Script {
     public Boolean usePortal;
     public boolean visitedOnce;
     List<String> blacklistNames = new ArrayList<>();
+    List<String> whitelistNames = new ArrayList<>();
 
     public static KPOHState state = KPOHState.IDLE;
+    public static KPOHConfig config;
 
     public boolean run(KPOHConfig config) {
         blacklistNames = new ArrayList<>();
+        whitelistNames.add("xGrace");
+        whitelistNames.add("RunePolitics");
 
         if (config.antiban()) {
             applyAntiBanSettings();
@@ -51,23 +57,21 @@ public class DefaultScript extends Script {
 
         mainScheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(() -> {
             try {
-                if (!Microbot.isLoggedIn()) return;
-                if (!super.run()) {
+                if (
+                    !Microbot.isLoggedIn()||
+                    !super.run() ||
+                    !validateInventory() ||
+                    Microbot.isGainingExp
+                ) {
                     return;
+                } else {
+                    Microbot.status = "Passed validation";
                 }
-
-                // Pre-check validations
-                if (!validateInventory()) {
-                    return;
-                }
-
-                if (Microbot.isGainingExp) return;
 
                 calculateState();
                 executeCurrentState();
-
             } catch (Exception ex) {
-                System.out.println(ex.getMessage());
+                Microbot.log(ex.getMessage());
             }
         }, 0, 1000, TimeUnit.MILLISECONDS);
         return true;
@@ -152,7 +156,7 @@ public class DefaultScript extends Script {
             Rs2Npc.interact(npcName, combinedAction);
             Rs2Player.waitForWalking();
         } else {
-            System.out.println("Phials not found, retrying...");
+            Microbot.log("Phials not found, retrying...");
         }
     }
 
@@ -236,7 +240,7 @@ public class DefaultScript extends Script {
             rightClick(phials, action);
             Rs2Player.waitForWalking();
         } else {
-            System.out.println("Phials not found, retrying...");
+            Microbot.log("Phials not found, retrying...");
         }
     }
 
@@ -266,14 +270,14 @@ public class DefaultScript extends Script {
     }
 
     public void leaveHouse() {
-        System.out.println("Attempting to leave house...");
+        Microbot.log("Attempting to leave house...");
 
         // We should only rely on using the settings menu if the portal is several rooms away from the portal. Bringing up 3 different interfaces when we can see the portal on screen is unnecessary.
         if (usePortal != null && usePortal) {
             int HOUSE_PORTAL_OBJECT = 4525;
             TileObject portalObject = Rs2GameObject.findObjectById(HOUSE_PORTAL_OBJECT);
             if (portalObject == null) {
-                System.out.println("Not in house, HOUSE_PORTAL_OBJECT not found.");
+                Microbot.log("Not in house, HOUSE_PORTAL_OBJECT not found.");
                 return;
             }
             Rs2GameObject.interact(portalObject);
@@ -295,7 +299,7 @@ public class DefaultScript extends Script {
         if (Rs2Widget.clickWidget(7602207)) {
             sleep(1200);
         } else {
-            System.out.println("House options button not found.");
+            Microbot.log("House options button not found.");
             return;
         }
 
@@ -303,7 +307,7 @@ public class DefaultScript extends Script {
         if (Rs2Widget.clickWidget(24248341)) {
             sleep(3000);
         } else {
-            System.out.println("Leave House button not found.");
+            Microbot.log("Leave House button not found.");
         }
     }
 
@@ -316,7 +320,7 @@ public class DefaultScript extends Script {
                     interactWithPhials("Use");
                     Rs2Player.waitForWalking();
                 } catch (Exception e) {
-                    System.out.println("Phials not found, retrying...");
+                    Microbot.log("Phials not found, retrying...");
                     sleep(3000);
                 }
             }
@@ -395,31 +399,152 @@ public class DefaultScript extends Script {
     }
 
     public void bonesOnAltar() {
-        if (portalCoords == null){
+        if (portalCoords == null) {
             portalCoords = Rs2Player.getWorldLocation();
         }
 
-        if (Rs2Player.isAnimating())  {
+        if (Rs2Player.isAnimating()) {
+            Microbot.log("Player is currently animating, waiting...");
             return;
         }
 
-        TileObject altar;
-
-        altar = Rs2GameObject.findObjectById(ObjectID.ALTAR_40878);
-        if (altar == null) {
-            altar = Rs2GameObject.findObjectById(ObjectID.ALTAR_13197);
+        // Check if we have unnoted bones in inventory
+        if (!hasUnNotedBones()) {
+            Microbot.log("No unnoted bones left in inventory");
+            if (!hasNotedBones()) {
+                Microbot.log("No bones left at all, logging out and stopping script");
+                shutdown();
+                return;
+            }
+            // If we have noted bones but not unnoted, we need to change state
+            return;
         }
 
-        Rs2Inventory.useUnNotedItemOnObject("bones", altar);
+        // Find altar using our comprehensive finder method
+        TileObject altar = findAltarInHouse();
+        if (altar == null) {
+            Microbot.log("Error: Altar not found in house.");
+            return;
+        }
+
+        // Try several methods to use bones on altar
+        boolean success = false;
+
+        // Method 1: Use the utility method if available
+        try {
+            success = Rs2Inventory.useUnNotedItemOnObject("bones", altar);
+            if (success) {
+                Microbot.log("Successfully used bones on altar (Method 1)");
+            }
+        } catch (Exception e) {
+            Microbot.log("Method 1 failed: " + e.getMessage());
+        }
+
+        // Method 2: Manual selection if first method failed
+        if (!success) {
+            try {
+                // Find all unnoted bones
+                List<Rs2ItemModel> unnotedBones = Rs2Inventory.getInventoryItems().stream()
+                        .filter(item -> item.getName().toLowerCase().contains("bones") && !item.isNoted())
+                        .collect(Collectors.toList());
+
+                if (unnotedBones.isEmpty()) {
+                    Microbot.log("No unnoted bones found in inventory");
+                    return;
+                }
+
+                // Select a random bone
+                int randomIndex = Rs2Random.between(0, unnotedBones.size() - 1);
+                Rs2ItemModel selectedBone = unnotedBones.get(randomIndex);
+
+                // Use the bone on the altar
+                if (!Rs2Inventory.isItemSelected()) {
+                    Microbot.log("Using " + selectedBone.getName() + " on altar (Method 2)");
+                    Rs2Inventory.interact(selectedBone.id, "Use");
+                    sleep(300, 600);
+                }
+
+                Rs2GameObject.interact(altar);
+                success = true;
+                Microbot.log("Successfully used bones on altar (Method 2)");
+            } catch (Exception e) {
+                Microbot.log("Method 2 failed: " + e.getMessage());
+            }
+        }
+
+        // Method 3: Direct menu option as fallback
+        if (!success) {
+            try {
+                Microbot.log("Trying direct menu option (Method 3)");
+                if (Rs2Tab.switchToInventoryTab()) {
+                    sleep(300, 500);
+                    for (Rs2ItemModel item : Rs2Inventory.getInventoryItems()) {
+                        if (item.getName().toLowerCase().contains("bones") && !item.isNoted()) {
+                            // Click using direct menu entry
+                            MenuAction action = MenuAction.ITEM_USE_ON_GAME_OBJECT;
+                            int itemId = item.id;
+                            Microbot.doInvoke(new NewMenuEntry(altar.getCanvasLocation().getX(), altar.getCanvasLocation().getY(),
+                                            action.getId(), altar.getId(), itemId, "Use", "Use " + item.getName() + " -> " + altar.getName(), Rs2GameObject.getGameObject("Altar")),
+                                    Rs2UiHelper.getObjectClickbox(altar));
+                            Microbot.log("Successfully used bones on altar (Method 3)");
+                            break;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Microbot.log("Method 3 failed: " + e.getMessage());
+            }
+        }
+
+        // Wait for animation regardless of method used
         Rs2Player.waitForAnimation();
 
+        // Store altar location for future reference
         if (altarCoords == null) {
             altarCoords = Rs2Player.getWorldLocation();
         }
 
+        // If portal is more than 10 tiles from altar, use settings menu to leave. Else, just walk back to portal.
         if (usePortal == null) {
             usePortal = altarCoords.distanceTo(portalCoords) <= 10;
         }
+    }
+
+    /**
+     * Finds an altar in the player's house by checking multiple known altar IDs
+     * @return The altar object if found, null otherwise
+     */
+    private TileObject findAltarInHouse() {
+        // All possible altar IDs in player-owned houses
+        int[] altarIds = {
+                ObjectID.ALTAR_13196,
+                ObjectID.ALTAR_13197,
+                ObjectID.ALTAR_13198,
+                ObjectID.ALTAR_13199,
+                13179, 13180, 13181, 13182, 13183,
+                13184, 13185, 13186, 13187, 13188,
+                13189, 13190, 13191, 13192, 13193,
+                13194, 13195, 13196, 13197, 13198,
+                13199, 40872, 40873, 40874, 40875,
+                40876, 40877, 40878
+        };
+
+        // Loop through all possible altar IDs
+        for (int id : altarIds) {
+            TileObject altar = Rs2GameObject.findObjectById(id);
+            if (altar != null) {
+                Microbot.log("Found altar with ID: " + id);
+                return altar;
+            }
+        }
+
+        // If no altar found by ID, try finding by name as a fallback
+        TileObject namedAltar = Rs2GameObject.getGameObject("Altar");
+        if (namedAltar != null) {
+            Microbot.log("Found altar by name search");
+        }
+
+        return namedAltar;
     }
 
     private void performAntiBan() {
@@ -462,7 +587,7 @@ public class DefaultScript extends Script {
     public void addNameToBlackList() {
         if (houseOwner != null && !houseOwner.isEmpty()) {
             blacklistNames.add(houseOwner);
-            System.out.println("Blacklisted house owner: " + houseOwner);
+            Microbot.log("Blacklisted house owner: " + houseOwner);
         }
     }
 
