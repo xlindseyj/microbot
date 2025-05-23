@@ -11,7 +11,6 @@ import net.runelite.client.plugins.microbot.KromitePlugins.kfalconry.enums.KFalc
 import net.runelite.client.plugins.microbot.Microbot;
 import net.runelite.client.plugins.microbot.Script;
 import net.runelite.client.plugins.microbot.util.antiban.Rs2AntibanSettings;
-import net.runelite.client.plugins.microbot.util.bank.Rs2Bank;
 import net.runelite.client.plugins.microbot.util.camera.Rs2Camera;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
 import net.runelite.client.plugins.microbot.util.math.Rs2Random;
@@ -22,10 +21,10 @@ import net.runelite.client.plugins.microbot.util.tabs.Rs2Tab;
 import net.runelite.client.plugins.microbot.util.walker.Rs2Walker;
 import net.runelite.client.plugins.microbot.util.widget.Rs2Widget;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -40,7 +39,9 @@ public class DefaultScript extends Script {
 
     private static long startTime = 0;
     private static int startExperience = 0;
-    private static AtomicInteger kebbitsHunted = new AtomicInteger(0);
+    private static int kebbitsHunted = 0;
+    private static long startXp = 0;
+    private static int hunterLevel = 0;
 
     // State management
     private KFalconryState currentState = KFalconryState.IDLE;
@@ -63,7 +64,7 @@ public class DefaultScript extends Script {
     public boolean onStart() {
         startTime = System.currentTimeMillis();
         startExperience = Microbot.getClient().getSkillExperience(Skill.HUNTER);
-        kebbitsHunted.set(0);
+        kebbitsHunted = 0;
         currentState = KFalconryState.STARTING;
         lastStateChange = System.currentTimeMillis();
         Microbot.log("Starting Falconry script v" + version);
@@ -74,7 +75,7 @@ public class DefaultScript extends Script {
 
     @Override
     public void shutdown() {
-        Microbot.log("Falconry script stopped. Total kebbits hunted: " + kebbitsHunted.get());
+        Microbot.log("Falconry script stopped. Total kebbits hunted: " + kebbitsHunted);
         Microbot.log("Total XP gained: " + (Microbot.getClient().getSkillExperience(Skill.HUNTER) - startExperience));
         isActive = false;
         currentState = KFalconryState.STOPPING;
@@ -209,7 +210,7 @@ public class DefaultScript extends Script {
             if (Rs2Npc.interact(falcon.getName(), "Retrieve")) {
                 Rs2Player.waitForAnimation();
                 sleep(Rs2Random.between(800, 1200));
-                kebbitsHunted.incrementAndGet();
+                kebbitsHunted++;
             }
             return;
         }
@@ -265,7 +266,7 @@ public class DefaultScript extends Script {
 
             if (inventoryChanged) {
                 // Increment kebbit counter
-                kebbitsHunted.incrementAndGet();
+                kebbitsHunted++;
             }
 
             // Short pause before looking for next kebbit
@@ -364,9 +365,7 @@ public class DefaultScript extends Script {
             // Get all kebbit types
             Stream<Rs2NpcModel> allKebbits = Rs2Npc.getNpcs(npc ->
                     npc.getId() == SPOTTED_KEBBIT_ID ||
-                            npc.getId() == DARK_KEBBIT_ID ||
-                            npc.getId() == GREY_KEBBIT_ID ||
-                            npc.getId() == RED_KEBBIT_ID);
+                            npc.getId() == DARK_KEBBIT_ID);
 
             // Return the closest kebbit if found
             return allKebbits
@@ -384,16 +383,6 @@ public class DefaultScript extends Script {
 
         if (targetKebbitsSetting.equals("All") || targetKebbitsSetting.contains("Dark")) {
             Rs2Npc.getNpcs(npc -> npc.getId() == DARK_KEBBIT_ID)
-                    .forEach(foundKebbits::add);
-        }
-
-        if (targetKebbitsSetting.equals("All") || targetKebbitsSetting.contains("Grey")) {
-            Rs2Npc.getNpcs(npc -> npc.getId() == GREY_KEBBIT_ID)
-                    .forEach(foundKebbits::add);
-        }
-
-        if (targetKebbitsSetting.equals("All") || targetKebbitsSetting.contains("Red")) {
-            Rs2Npc.getNpcs(npc -> npc.getId() == RED_KEBBIT_ID)
                     .forEach(foundKebbits::add);
         }
 
@@ -521,7 +510,7 @@ public class DefaultScript extends Script {
         if (timeElapsed <= 0) return 0;
 
         double hoursElapsed = timeElapsed / 3600000.0;
-        int kebbitCount = kebbitsHunted.get();
+        int kebbitCount = kebbitsHunted;
 
         return (int)(kebbitCount / hoursElapsed);
     }
@@ -548,6 +537,6 @@ public class DefaultScript extends Script {
     }
 
     public static int getKebbitsHunted() {
-        return kebbitsHunted.get();
+        return kebbitsHunted;
     }
 }

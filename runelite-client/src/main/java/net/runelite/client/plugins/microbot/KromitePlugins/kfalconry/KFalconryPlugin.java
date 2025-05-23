@@ -1,19 +1,21 @@
 package net.runelite.client.plugins.microbot.KromitePlugins.kfalconry;
 
+import com.google.inject.Provides;
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.input.KeyManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.plugins.microbot.Microbot;
 import net.runelite.client.plugins.microbot.KromitePlugins.kfalconry.scripts.DefaultScript;
 import net.runelite.client.ui.overlay.OverlayManager;
-import net.runelite.client.plugins.microbot.Microbot;
-import net.runelite.client.input.KeyManager;
 import net.runelite.client.util.HotkeyListener;
 
 import javax.inject.Inject;
-import java.util.logging.Logger;
-
-import com.google.inject.Provides;
-import lombok.extern.slf4j.Slf4j;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @PluginDescriptor(
@@ -36,10 +38,9 @@ public class KFalconryPlugin extends Plugin {
     private KeyManager keyManager;
 
     private DefaultScript script;
-    private Logger log = Logger.getLogger(KFalconryPlugin.class.getName());
     private boolean running = false;
-    private boolean initialized = false;
-    private boolean scriptInitialized = false;
+    private ScheduledExecutorService executor;
+    private ScheduledFuture<?> scriptFuture;
 
     @Provides
     KFalconryConfig provideConfig(ConfigManager configManager) {
@@ -58,23 +59,8 @@ public class KFalconryPlugin extends Plugin {
         overlayManager.add(overlay);
         keyManager.registerKeyListener(hotkeyListener);
         script = new DefaultScript();
-
-        if (script == null) {
-            log.info("Failed to initialize Kromite's Falconry script");
-            stopScript();
-            return;
-        }
-
-        initialized = true;
-        scriptInitialized = script.onStart();
-
-        if (!scriptInitialized) {
-            log.info("Failed to start Kromite's Falconry plugin");
-            stopScript();
-        } else {
-            startScript();
-            log.info("Kromite's Falconry plugin started");
-        }
+        executor = Executors.newSingleThreadScheduledExecutor();
+        Microbot.status = "Plugin started - press hotkey to begin";
     }
 
     @Override
@@ -82,18 +68,29 @@ public class KFalconryPlugin extends Plugin {
         overlayManager.remove(overlay);
         keyManager.unregisterKeyListener(hotkeyListener);
         stopScript();
-        script = null;
-        initialized = false;
-        log.info("Kromite's Falconry plugin stopped");
+
+        if (executor != null) {
+            executor.shutdown();
+        }
     }
 
     public void startScript() {
-        if (!initialized || running) return;
+        if (running) return;
 
         running = true;
         Microbot.status = "Starting Falconry...";
-        script.run(config);
-        log.info("Falconry script started");
+
+        if (script.onStart()) {
+            scriptFuture = executor.scheduleWithFixedDelay(() -> {
+                if (Microbot.isLoggedIn()) {
+                    script.run(config);
+                }
+            }, 0, 600, TimeUnit.MILLISECONDS);
+            Microbot.log("Falconry script started");
+        } else {
+            running = false;
+            Microbot.status = "Failed to start script";
+        }
     }
 
     public void stopScript() {
@@ -101,10 +98,16 @@ public class KFalconryPlugin extends Plugin {
 
         running = false;
         Microbot.status = "Stopped";
+
+        if (scriptFuture != null) {
+            scriptFuture.cancel(false);
+        }
+
         if (script != null) {
             script.shutdown();
         }
-        log.info("Falconry script stopped");
+
+        Microbot.log("Falconry script stopped");
     }
 
     public void toggleScript() {
@@ -113,10 +116,5 @@ public class KFalconryPlugin extends Plugin {
         } else {
             startScript();
         }
-    }
-
-    // This method can be used by menu option entries to toggle the script
-    public void onMenuOptionClicked() {
-        toggleScript();
     }
 }
