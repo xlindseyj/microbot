@@ -1,0 +1,318 @@
+package net.runelite.client.plugins.microbot.aiautonomous;
+
+import com.google.inject.Provides;
+import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Client;
+import net.runelite.api.GameState;
+import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.GameTick;
+import net.runelite.client.config.ConfigManager;
+import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.plugins.Plugin;
+import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.plugins.microbot.Microbot;
+import net.runelite.client.plugins.microbot.aiautonomous.ai.DecisionEngine;
+import net.runelite.client.plugins.microbot.aiautonomous.ai.KnowledgeManager;
+import net.runelite.client.plugins.microbot.aiautonomous.ai.OllamaClient;
+import net.runelite.client.plugins.microbot.aiautonomous.ai.memory.GameMemory;
+import net.runelite.client.plugins.microbot.aiautonomous.core.AutonomousGameStateManager;
+import net.runelite.client.plugins.microbot.aiautonomous.core.ActionExecutor;
+import net.runelite.client.plugins.microbot.aiautonomous.core.GameStateAnalyzer;
+import net.runelite.client.plugins.microbot.aiautonomous.integration.WikiIntegration;
+import net.runelite.client.plugins.microbot.aiautonomous.integration.RAGSystemInterface;
+import net.runelite.client.plugins.microbot.aiautonomous.integration.RAGSystemFactory;
+import net.runelite.client.ui.overlay.OverlayManager;
+
+import javax.inject.Inject;
+import java.awt.*;
+
+
+@PluginDescriptor(
+        name = PluginDescriptor.VOX + "AI Autonomous Player",
+        description = "AI-powered autonomous RuneScape player using Ollama and external knowledge sources",
+        tags = {"ai", "autonomous", "microbot", "ollama", "rag"},
+        authors = {"VOX", "Claude"},
+        version = "1.0.0",
+        enabledByDefault = false,
+        priority = true
+)
+@Slf4j
+public class AiAutonomousPlugin extends Plugin {
+
+    @Inject
+    private Client client;
+
+    @Inject
+    private AiAutonomousConfig config;
+
+    @Inject
+    private OverlayManager overlayManager;
+
+    private AiAutonomousScript script;
+    private AiAutonomousOverlay overlay;
+
+    // AI Components
+    private OllamaClient ollamaClient;
+    private RAGSystemInterface ragSystem;
+    private WikiIntegration wikiIntegration;
+    private KnowledgeManager knowledgeManager;
+    private DecisionEngine decisionEngine;
+    private GameMemory gameMemory;
+
+    // Core Components
+    private AutonomousGameStateManager gameStateManager;
+    private ActionExecutor actionExecutor;
+    private GameStateAnalyzer gameStateAnalyzer;
+
+    private boolean initialized = false;
+
+    @Provides
+    AiAutonomousConfig provideConfig(ConfigManager configManager) {
+        return configManager.getConfig(AiAutonomousConfig.class);
+    }
+
+    @Override
+    protected void startUp() throws Exception {
+        log.info("Starting AI Autonomous Player plugin...");
+
+        if (overlayManager != null) {
+            overlay = new AiAutonomousOverlay(this);
+            overlayManager.add(overlay);
+        }
+
+        initializeComponents();
+
+        if (config.enablePlugin()) {
+            script = new AiAutonomousScript(this);
+            script.run(config);
+        }
+    }
+
+    @Override
+    protected void shutDown() {
+        log.info("Shutting down AI Autonomous Player plugin...");
+
+        if (script != null) {
+            script.shutdown();
+            script = null;
+        }
+
+        if (overlayManager != null && overlay != null) {
+            overlayManager.remove(overlay);
+        }
+
+        if (gameMemory != null) {
+            gameMemory.saveSession();
+        }
+
+        shutdownComponents();
+    }
+
+    private void initializeComponents() {
+        try {
+            log.info("Initializing AI components...");
+
+            // Initialize AI clients based on feature toggles
+            if (config.enableDecisionMaking()) {
+                ollamaClient = new OllamaClient(config.ollamaBaseUrl(), config.ollamaModel());
+                log.info("Ollama client initialized");
+            }
+
+            if (config.enableRAGSystem()) {
+                ragSystem = RAGSystemFactory.createWithFallback(config);
+                if (ragSystem != null) {
+                    log.info("RAG system initialized: {}", ragSystem.getSystemType());
+                } else {
+                    log.error("Failed to initialize any RAG system");
+                }
+            }
+
+            if (config.enableWikiIntegration()) {
+                wikiIntegration = new WikiIntegration();
+                log.info("Wiki integration initialized");
+            }
+
+            // Initialize memory and knowledge systems
+            if (config.enableMemorySystem()) {
+                gameMemory = new GameMemory();
+                log.info("Game memory initialized");
+            }
+
+            if (config.enableDecisionMaking() && (ragSystem != null || wikiIntegration != null || gameMemory != null)) {
+                knowledgeManager = new KnowledgeManager(ragSystem, wikiIntegration, gameMemory);
+                log.info("Knowledge manager initialized");
+            }
+
+            // Initialize decision engine
+            if (config.enableDecisionMaking() && ollamaClient != null) {
+                decisionEngine = new DecisionEngine(ollamaClient, knowledgeManager);
+                log.info("Decision engine initialized");
+            }
+
+            // Initialize core game components
+            gameStateAnalyzer = new GameStateAnalyzer(client);
+
+            if (config.enableActionExecution()) {
+                actionExecutor = new ActionExecutor(client, config);
+                log.info("Action executor initialized");
+            }
+
+            if (gameStateAnalyzer != null && (decisionEngine != null || actionExecutor != null)) {
+                gameStateManager = new AutonomousGameStateManager(
+                    gameStateAnalyzer,
+                    decisionEngine,
+                    actionExecutor,
+                    gameMemory,
+                    config
+                );
+                log.info("Game state manager initialized");
+            }
+
+            // Load existing knowledge and memories if enabled
+            if (knowledgeManager != null) {
+                knowledgeManager.initialize();
+            }
+            if (gameMemory != null) {
+                gameMemory.loadSession();
+            }
+
+            initialized = true;
+            log.info("AI Autonomous Player components initialized successfully");
+
+        } catch (Exception e) {
+            log.error("Failed to initialize AI components", e);
+            Microbot.showMessage("AI Autonomous Player: Failed to initialize - " + e.getMessage());
+        }
+    }
+
+    private void shutdownComponents() {
+        try {
+            if (knowledgeManager != null) {
+                knowledgeManager.shutdown();
+            }
+            if (ragSystem != null) {
+                ragSystem.shutdown();
+            }
+            initialized = false;
+            log.info("AI components shut down successfully");
+        } catch (Exception e) {
+            log.error("Error during component shutdown", e);
+        }
+    }
+
+    @Subscribe
+    public void onGameStateChanged(GameStateChanged gameStateChanged) {
+        if (!initialized || !config.enablePlugin()) {
+            return;
+        }
+
+        GameState newState = gameStateChanged.getGameState();
+        log.debug("Game state changed to: {}", newState);
+
+        if (gameStateManager != null) {
+            gameStateManager.onGameStateChanged(newState);
+        }
+
+        // Record state changes in memory
+        if (gameMemory != null) {
+            gameMemory.recordStateChange(newState);
+        }
+    }
+
+    @Subscribe
+    public void onGameTick(GameTick gameTick) {
+        if (!initialized || !config.enablePlugin()) {
+            return;
+        }
+
+        try {
+            if (gameStateManager != null) {
+                gameStateManager.processTick();
+            }
+        } catch (Exception e) {
+            log.error("Error processing game tick", e);
+            if (config.debugMode()) {
+                Microbot.showMessage("AI Error: " + e.getMessage());
+            }
+        }
+    }
+
+    // Getters for components
+    public OllamaClient getOllamaClient() {
+        return ollamaClient;
+    }
+
+    public RAGSystemInterface getRagSystem() {
+        return ragSystem;
+    }
+
+    public WikiIntegration getWikiIntegration() {
+        return wikiIntegration;
+    }
+
+    public KnowledgeManager getKnowledgeManager() {
+        return knowledgeManager;
+    }
+
+    public DecisionEngine getDecisionEngine() {
+        return decisionEngine;
+    }
+
+    public GameMemory getGameMemory() {
+        return gameMemory;
+    }
+
+    public AutonomousGameStateManager getGameStateManager() {
+        return gameStateManager;
+    }
+
+    public ActionExecutor getActionExecutor() {
+        return actionExecutor;
+    }
+
+    public GameStateAnalyzer getGameStateAnalyzer() {
+        return gameStateAnalyzer;
+    }
+
+    public boolean isInitialized() {
+        return initialized;
+    }
+
+    public AiAutonomousConfig getConfig() {
+        return config;
+    }
+
+    public String getStatus() {
+        if (!initialized) {
+            return "Initializing...";
+        }
+        if (!config.enablePlugin()) {
+            return "Disabled";
+        }
+        if (gameStateManager != null) {
+            return gameStateManager.getCurrentState().toString();
+        }
+        return "Unknown";
+    }
+
+    public String getLastDecision() {
+        if (decisionEngine != null) {
+            return decisionEngine.getLastDecision();
+        }
+        return "No decisions yet";
+    }
+
+    public int getActionsPerformed() {
+        if (actionExecutor != null) {
+            return actionExecutor.getActionsPerformed();
+        }
+        return 0;
+    }
+
+    public String getKnowledgeStats() {
+        if (knowledgeManager != null) {
+            return knowledgeManager.getStats();
+        }
+        return "Knowledge system not initialized";
+    }
+}
