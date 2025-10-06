@@ -5,9 +5,11 @@ import net.runelite.api.GameState;
 import net.runelite.client.plugins.microbot.Microbot;
 import net.runelite.client.plugins.microbot.Script;
 import net.runelite.client.plugins.microbot.aiautonomous.core.AutonomousGameState;
+import net.runelite.client.plugins.microbot.aiautonomous.core.AutoHotkeyIntegration;
 import net.runelite.client.plugins.microbot.util.player.Rs2Player;
 import net.runelite.client.plugins.microbot.util.antiban.Rs2Antiban;
 import net.runelite.client.plugins.microbot.util.antiban.Rs2AntibanSettings;
+import net.runelite.client.input.KeyManager;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -19,6 +21,7 @@ public class AiAutonomousScript extends Script {
 
     private final AiAutonomousPlugin plugin;
     private AiAutonomousConfig config;
+    private AutoHotkeyIntegration autoHotkeyIntegration;
 
     private Instant sessionStartTime;
     private Instant lastDecisionTime;
@@ -52,6 +55,9 @@ public class AiAutonomousScript extends Script {
             log.info("Antiban measures initialized");
         }
 
+        // Initialize AutoHotkey integration
+        initializeAutoHotkey();
+
         mainLoop();
         return true;
     }
@@ -65,6 +71,11 @@ public class AiAutonomousScript extends Script {
     public void onStop() {
         log.info("AI Autonomous Script stopped");
         Microbot.showMessage("AI Autonomous Player: Stopped");
+
+        // Shutdown AutoHotkey integration
+        if (autoHotkeyIntegration != null) {
+            autoHotkeyIntegration.shutdown();
+        }
 
         // Save current session data
         if (plugin.getGameMemory() != null) {
@@ -307,5 +318,30 @@ public class AiAutonomousScript extends Script {
         } catch (Exception e) {
             log.warn("Failed to initialize antiban settings", e);
         }
+    }
+
+    private void initializeAutoHotkey() {
+        try {
+            // Get KeyManager from the plugin
+            KeyManager keyManager = plugin.getKeyManager();
+
+            if (keyManager != null) {
+                autoHotkeyIntegration = new AutoHotkeyIntegration(this, config, keyManager);
+                log.info("AutoHotkey integration initialized successfully");
+
+                // Log available hotkeys for user reference
+                log.info("AutoHotkey commands available:\n{}", autoHotkeyIntegration.getHotkeyHelp());
+
+                Microbot.showMessage("AutoHotkey integration active - Press Ctrl+Alt+H for help");
+            } else {
+                log.warn("KeyManager not available, AutoHotkey integration disabled");
+            }
+        } catch (Exception e) {
+            log.error("Failed to initialize AutoHotkey integration", e);
+        }
+    }
+
+    public AutoHotkeyIntegration getAutoHotkeyIntegration() {
+        return autoHotkeyIntegration;
     }
 }

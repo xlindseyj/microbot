@@ -22,16 +22,17 @@ import net.runelite.client.plugins.microbot.aiautonomous.integration.WikiIntegra
 import net.runelite.client.plugins.microbot.aiautonomous.integration.RAGSystemInterface;
 import net.runelite.client.plugins.microbot.aiautonomous.integration.RAGSystemFactory;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.input.KeyManager;
 
 import javax.inject.Inject;
 import java.awt.*;
 
 
 @PluginDescriptor(
-        name = PluginDescriptor.VOX + "AI Autonomous Player",
+        name = "[Kromite] AI Autonomous Player",
         description = "AI-powered autonomous RuneScape player using Ollama and external knowledge sources",
         tags = {"ai", "autonomous", "microbot", "ollama", "rag"},
-        authors = {"VOX", "Claude"},
+        authors = {"Kromite"},
         version = "1.0.0",
         enabledByDefault = false,
         priority = true
@@ -47,6 +48,9 @@ public class AiAutonomousPlugin extends Plugin {
 
     @Inject
     private OverlayManager overlayManager;
+
+    @Inject
+    private KeyManager keyManager;
 
     private AiAutonomousScript script;
     private AiAutonomousOverlay overlay;
@@ -314,5 +318,9 @@ public class AiAutonomousPlugin extends Plugin {
             return knowledgeManager.getStats();
         }
         return "Knowledge system not initialized";
+    }
+
+    public KeyManager getKeyManager() {
+        return keyManager;
     }
 }
