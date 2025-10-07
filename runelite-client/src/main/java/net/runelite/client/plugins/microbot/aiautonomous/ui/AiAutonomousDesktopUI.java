@@ -59,7 +59,7 @@ public class AiAutonomousDesktopUI extends JFrame {
 
         // Set look and feel
         try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeel());
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception e) {
             log.warn("Failed to set system look and feel", e);
         }
