@@ -520,6 +520,106 @@ public class RAGSystem implements RAGSystemInterface {
     }
 
     @Override
+    public CompletableFuture<Boolean> storeDocument(String id, String content, Map<String, Object> metadata) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                if (!isConnected || !collectionExists) {
+                    log.warn("RAG system not available for storing document");
+                    return false;
+                }
+
+                JsonObject addRequest = new JsonObject();
+
+                JsonArray ids = new JsonArray();
+                ids.add(id);
+                addRequest.add("ids", ids);
+
+                JsonArray documents = new JsonArray();
+                documents.add(content);
+                addRequest.add("documents", documents);
+
+                if (metadata != null && !metadata.isEmpty()) {
+                    JsonArray metadatas = new JsonArray();
+                    JsonObject metadataObj = new JsonObject();
+                    for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+                        metadataObj.addProperty(entry.getKey(), entry.getValue().toString());
+                    }
+                    metadatas.add(metadataObj);
+                    addRequest.add("metadatas", metadatas);
+                }
+
+                RequestBody body = RequestBody.create(
+                    MediaType.get("application/json"),
+                    gson.toJson(addRequest)
+                );
+
+                Request request = new Request.Builder()
+                        .url(baseUrl + "/api/v1/collections/" + collectionName + "/add")
+                        .post(body)
+                        .build();
+
+                try (Response response = httpClient.newCall(request).execute()) {
+                    boolean success = response.isSuccessful();
+                    if (success) {
+                        log.debug("Stored document: {}", id);
+                    } else {
+                        log.error("Failed to store document: HTTP {}", response.code());
+                    }
+                    return success;
+                }
+
+            } catch (Exception e) {
+                log.error("Error storing document", e);
+                return false;
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<List<KnowledgeEntry>> searchDocuments(String query, int maxResults) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                if (!isConnected || !collectionExists) {
+                    log.warn("RAG system not available for search");
+                    return new ArrayList<>();
+                }
+
+                JsonObject searchRequest = new JsonObject();
+
+                JsonArray queryTexts = new JsonArray();
+                queryTexts.add(query);
+                searchRequest.add("query_texts", queryTexts);
+
+                searchRequest.addProperty("n_results", maxResults);
+
+                RequestBody body = RequestBody.create(
+                    MediaType.get("application/json"),
+                    gson.toJson(searchRequest)
+                );
+
+                Request request = new Request.Builder()
+                        .url(baseUrl + "/api/v1/collections/" + collectionName + "/query")
+                        .post(body)
+                        .build();
+
+                try (Response response = httpClient.newCall(request).execute()) {
+                    if (!response.isSuccessful()) {
+                        log.error("Document search failed: HTTP {}", response.code());
+                        return new ArrayList<>();
+                    }
+
+                    String responseBody = response.body().string();
+                    return parseSearchResults(responseBody, 0.0); // No minimum similarity for document search
+                }
+
+            } catch (Exception e) {
+                log.error("Error searching documents", e);
+                return new ArrayList<>();
+            }
+        });
+    }
+
+    @Override
     public void shutdown() {
         // Close HTTP client resources if needed
         log.info("RAG system shutdown");
