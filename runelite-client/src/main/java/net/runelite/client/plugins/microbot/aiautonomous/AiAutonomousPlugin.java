@@ -21,6 +21,10 @@ import net.runelite.client.plugins.microbot.aiautonomous.core.GameStateAnalyzer;
 import net.runelite.client.plugins.microbot.aiautonomous.integration.WikiIntegration;
 import net.runelite.client.plugins.microbot.aiautonomous.integration.RAGSystemInterface;
 import net.runelite.client.plugins.microbot.aiautonomous.integration.RAGSystemFactory;
+import net.runelite.client.plugins.microbot.aiautonomous.training.BaseModeTrainer;
+import net.runelite.client.plugins.microbot.aiautonomous.content.ContentManager;
+import net.runelite.client.plugins.microbot.aiautonomous.strategy.RealTimeStrategyAdjuster;
+import net.runelite.client.plugins.microbot.aiautonomous.ui.AiAutonomousDesktopUI;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.input.KeyManager;
 
@@ -67,6 +71,14 @@ public class AiAutonomousPlugin extends Plugin {
     private AutonomousGameStateManager gameStateManager;
     private ActionExecutor actionExecutor;
     private GameStateAnalyzer gameStateAnalyzer;
+
+    // Training and Content Components
+    private BaseModeTrainer baseModeTrainer;
+    private ContentManager contentManager;
+    private RealTimeStrategyAdjuster strategyAdjuster;
+
+    // UI Components
+    private AiAutonomousDesktopUI desktopUI;
 
     private boolean initialized = false;
 
@@ -118,7 +130,15 @@ public class AiAutonomousPlugin extends Plugin {
 
             // Initialize AI clients based on feature toggles
             if (config.enableDecisionMaking()) {
-                ollamaClient = new OllamaClient(config.ollamaBaseUrl(), config.ollamaModel());
+                // Use working local Ollama instance instead of cached configuration
+                String ollamaUrl = "http://localhost:11434";
+                String ollamaModel = "llama3";
+
+                log.info("Creating Ollama client - URL: {}, Model: {}", ollamaUrl, ollamaModel);
+                log.info("Note: Using hardcoded working configuration to override cached settings");
+                log.info("To use custom configuration, go to Plugin Configuration -> AI Autonomous Player -> Ollama Settings and clear the cached values");
+
+                ollamaClient = new OllamaClient(ollamaUrl, ollamaModel);
                 log.info("Ollama client initialized");
             }
 
@@ -143,7 +163,7 @@ public class AiAutonomousPlugin extends Plugin {
             }
 
             if (config.enableDecisionMaking() && (ragSystem != null || wikiIntegration != null || gameMemory != null)) {
-                knowledgeManager = new KnowledgeManager(ragSystem, wikiIntegration, gameMemory);
+                knowledgeManager = new KnowledgeManager(ragSystem, wikiIntegration, gameMemory, config);
                 log.info("Knowledge manager initialized");
             }
 
@@ -155,6 +175,26 @@ public class AiAutonomousPlugin extends Plugin {
 
             // Initialize core game components
             gameStateAnalyzer = new GameStateAnalyzer(client);
+
+            // Initialize content manager for F2P/P2P restrictions
+            contentManager = new ContentManager(config);
+            log.info("Content manager initialized");
+
+            // Initialize base mode trainer if needed
+            if (isBaseModeActive()) {
+                baseModeTrainer = new BaseModeTrainer(config, knowledgeManager);
+                log.info("Base mode trainer initialized");
+            }
+
+            // Initialize real-time strategy adjuster
+            if (config.enableDecisionMaking()) {
+                strategyAdjuster = new RealTimeStrategyAdjuster(config, knowledgeManager);
+                log.info("Real-time strategy adjuster initialized");
+            }
+
+            // Initialize desktop UI
+            desktopUI = new AiAutonomousDesktopUI(this);
+            log.info("Desktop UI initialized");
 
             if (config.enableActionExecution()) {
                 actionExecutor = new ActionExecutor(client, config);
@@ -182,6 +222,12 @@ public class AiAutonomousPlugin extends Plugin {
 
             initialized = true;
             log.info("AI Autonomous Player components initialized successfully");
+
+            // Show desktop UI after all components are initialized
+            if (desktopUI != null) {
+                desktopUI.showUI();
+                log.info("Desktop UI launched");
+            }
 
         } catch (Exception e) {
             log.error("Failed to initialize AI components", e);
@@ -232,6 +278,11 @@ public class AiAutonomousPlugin extends Plugin {
         try {
             if (gameStateManager != null) {
                 gameStateManager.processTick();
+            }
+
+            // Process real-time strategy adjustments
+            if (strategyAdjuster != null && gameStateAnalyzer != null) {
+                strategyAdjuster.analyzeAndAdjust(gameStateAnalyzer.analyzeCurrentGameState());
             }
         } catch (Exception e) {
             log.error("Error processing game tick", e);
@@ -322,5 +373,26 @@ public class AiAutonomousPlugin extends Plugin {
 
     public KeyManager getKeyManager() {
         return keyManager;
+    }
+
+    public BaseModeTrainer getBaseModeTrainer() {
+        return baseModeTrainer;
+    }
+
+    public ContentManager getContentManager() {
+        return contentManager;
+    }
+
+    public RealTimeStrategyAdjuster getStrategyAdjuster() {
+        return strategyAdjuster;
+    }
+
+    public AiAutonomousDesktopUI getDesktopUI() {
+        return desktopUI;
+    }
+
+    private boolean isBaseModeActive() {
+        return config.primaryGoal() == AiAutonomousConfig.AiGoal.BASE_MODE ||
+               config.trainingMode() == AiAutonomousConfig.TrainingMode.BASE_MODE;
     }
 }

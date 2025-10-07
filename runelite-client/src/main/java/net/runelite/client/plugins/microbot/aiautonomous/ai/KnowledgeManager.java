@@ -2,12 +2,15 @@ package net.runelite.client.plugins.microbot.aiautonomous.ai;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.plugins.microbot.aiautonomous.ai.memory.GameMemory;
+import net.runelite.client.plugins.microbot.aiautonomous.ai.memory.ExperienceStorage;
 import net.runelite.client.plugins.microbot.aiautonomous.ai.OllamaClient.GameContext;
+import net.runelite.client.plugins.microbot.aiautonomous.core.GameStateAnalyzer;
 import net.runelite.client.plugins.microbot.aiautonomous.integration.RAGSystemInterface;
 import net.runelite.client.plugins.microbot.aiautonomous.integration.RAGSystemInterface.KnowledgeEntry;
 import net.runelite.client.plugins.microbot.aiautonomous.integration.WikiIntegration;
 import net.runelite.client.plugins.microbot.aiautonomous.integration.WikiIntegration.WikiSearchResult;
 import net.runelite.client.plugins.microbot.aiautonomous.integration.WikiIntegration.WikiPageContent;
+import net.runelite.client.plugins.microbot.aiautonomous.AiAutonomousConfig;
 
 import java.time.Instant;
 import java.util.*;
@@ -21,6 +24,7 @@ public class KnowledgeManager {
     private final RAGSystemInterface ragSystem;
     private final WikiIntegration wikiIntegration;
     private final GameMemory gameMemory;
+    private final ExperienceStorage experienceStorage;
 
     // Knowledge quality tracking
     private final Map<String, KnowledgeQuality> knowledgeQuality = new HashMap<>();
@@ -31,10 +35,11 @@ public class KnowledgeManager {
     private static final double MIN_SIMILARITY_THRESHOLD = 0.6;
     private static final int MAX_WIKI_RESULTS = 3;
 
-    public KnowledgeManager(RAGSystemInterface ragSystem, WikiIntegration wikiIntegration, GameMemory gameMemory) {
+    public KnowledgeManager(RAGSystemInterface ragSystem, WikiIntegration wikiIntegration, GameMemory gameMemory, AiAutonomousConfig config) {
         this.ragSystem = ragSystem;
         this.wikiIntegration = wikiIntegration;
         this.gameMemory = gameMemory;
+        this.experienceStorage = new ExperienceStorage(ragSystem, config);
     }
 
     public void initialize() {
@@ -53,29 +58,41 @@ public class KnowledgeManager {
         List<String> relevantKnowledge = new ArrayList<>();
 
         try {
-            // 1. Search RAG system for stored knowledge
-            CompletableFuture<List<KnowledgeEntry>> ragFuture =
-                ragSystem.searchKnowledge(situation, MAX_KNOWLEDGE_ENTRIES, MIN_SIMILARITY_THRESHOLD);
+            // 1. Search RAG system for stored knowledge (if available)
+            CompletableFuture<List<KnowledgeEntry>> ragFuture = null;
+            if (ragSystem != null) {
+                ragFuture = ragSystem.searchKnowledge(situation, MAX_KNOWLEDGE_ENTRIES, MIN_SIMILARITY_THRESHOLD);
+            }
 
             // 2. Search game memory for relevant experiences
             List<String> memoryKnowledge = gameMemory.searchRelevantMemories(situation, 3);
 
-            // 3. Search wiki if needed (for new or complex topics)
+            // 3. Search experience storage for similar gameplay experiences
+            CompletableFuture<List<String>> experienceFuture =
+                experienceStorage.queryRelevantExperiences(situation);
+
+            // 4. Search wiki if needed (for new or complex topics)
             CompletableFuture<WikiSearchResult> wikiFuture = null;
             if (shouldSearchWiki(situation)) {
                 wikiFuture = wikiIntegration.searchWiki(extractWikiSearchTerm(situation));
             }
 
-            // Wait for RAG results
-            List<KnowledgeEntry> ragResults = ragFuture.get();
-            for (KnowledgeEntry entry : ragResults) {
-                String knowledge = formatKnowledgeEntry(entry);
-                relevantKnowledge.add(knowledge);
-                updateKnowledgeUsage(entry.getId());
+            // Wait for RAG results (if RAG system is available)
+            if (ragFuture != null) {
+                List<KnowledgeEntry> ragResults = ragFuture.get();
+                for (KnowledgeEntry entry : ragResults) {
+                    String knowledge = formatKnowledgeEntry(entry);
+                    relevantKnowledge.add(knowledge);
+                    updateKnowledgeUsage(entry.getId());
+                }
             }
 
             // Add memory knowledge
             relevantKnowledge.addAll(memoryKnowledge);
+
+            // Add experience storage results
+            List<String> experienceResults = experienceFuture.get();
+            relevantKnowledge.addAll(experienceResults);
 
             // Wait for wiki results if searching
             if (wikiFuture != null) {
@@ -118,7 +135,9 @@ public class KnowledgeManager {
             metadata.put("timestamp", decision.getTimestamp().toString());
             entry.setMetadata(metadata);
 
-            ragSystem.addKnowledge(entry);
+            if (ragSystem != null) {
+                ragSystem.addKnowledge(entry);
+            }
 
             // Record in game memory
             gameMemory.recordDecision(situation, decision, context);
@@ -176,7 +195,9 @@ public class KnowledgeManager {
             fullMetadata.put("added_timestamp", Instant.now().toString());
             entry.setMetadata(fullMetadata);
 
-            ragSystem.addKnowledge(entry);
+            if (ragSystem != null) {
+                ragSystem.addKnowledge(entry);
+            }
 
             log.debug("Added external knowledge from source: {}", source);
 
@@ -348,6 +369,11 @@ public class KnowledgeManager {
 
     private void populateInitialKnowledge() {
         // Add some initial game knowledge
+        if (ragSystem == null) {
+            log.warn("RAG system not available, skipping initial knowledge population");
+            return;
+        }
+
         List<KnowledgeEntry> initialKnowledge = createInitialGameKnowledge();
 
         if (!initialKnowledge.isEmpty()) {
@@ -407,9 +433,45 @@ public class KnowledgeManager {
         log.debug("Saving knowledge quality data");
     }
 
+    // Experience storage methods
+    public void storeGameplayExperience(GameStateAnalyzer.GameState gameState, String action,
+                                      String outcome, boolean successful) {
+        experienceStorage.storeGameplayExperience(gameState, action, outcome, successful);
+    }
+
+    public void storeSkillProgressExperience(String skill, int oldLevel, int newLevel,
+                                           String method, long timeSpent) {
+        experienceStorage.storeSkillProgressExperience(skill, oldLevel, newLevel, method, timeSpent);
+    }
+
+    public void storeQuestExperience(String questName, String step, boolean completed,
+                                   List<String> requirements, String strategy) {
+        experienceStorage.storeQuestExperience(questName, step, completed, requirements, strategy);
+    }
+
+    public void storeCombatExperience(String opponent, String strategy, boolean victory,
+                                    int damage, long duration) {
+        experienceStorage.storeCombatExperience(opponent, strategy, victory, damage, duration);
+    }
+
+    public void storeResourceGatheringExperience(String resource, String method,
+                                               int quantity, long timeSpent) {
+        experienceStorage.storeResourceGatheringExperience(resource, method, quantity, timeSpent);
+    }
+
+    public Map<String, Double> getActionSuccessRates() {
+        return experienceStorage.getActionSuccessRates();
+    }
+
+    public List<String> getBestStrategiesFor(String context) {
+        return experienceStorage.getBestStrategiesFor(context);
+    }
+
     public String getStats() {
-        return String.format("Knowledge entries used: %d, Verified: %d, Quality tracked: %d",
+        String baseStats = String.format("Knowledge entries used: %d, Verified: %d, Quality tracked: %d",
                 knowledgeUsageCount.size(), verifiedKnowledge.size(), knowledgeQuality.size());
+        String experienceStats = experienceStorage.getExperienceStats();
+        return baseStats + " | " + experienceStats;
     }
 
     private static class KnowledgeQuality {

@@ -79,6 +79,23 @@ public interface RAGSystemInterface {
     }
 
     /**
+     * Store a document in the RAG system.
+     * @param id Unique identifier for the document
+     * @param content The document content/context
+     * @param metadata Additional metadata for the document
+     * @return Future indicating success/failure
+     */
+    CompletableFuture<Boolean> storeDocument(String id, String content, Map<String, Object> metadata);
+
+    /**
+     * Search for documents in the RAG system.
+     * @param query The search query
+     * @param maxResults Maximum number of results to return
+     * @return Future containing list of matching documents
+     */
+    CompletableFuture<List<KnowledgeEntry>> searchDocuments(String query, int maxResults);
+
+    /**
      * Get the type of RAG system.
      * @return System type identifier
      */

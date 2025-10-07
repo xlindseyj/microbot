@@ -24,6 +24,15 @@ public interface AiAutonomousConfig extends Config {
         return false;
     }
 
+    @ConfigItem(
+            keyName = "showOverlay",
+            name = "Show Overlay",
+            description = "Show the AI status overlay on screen"
+    )
+    default boolean showOverlay() {
+        return true;
+    }
+
     // Feature Toggles
     @ConfigSection(
             name = "Feature Controls",
@@ -187,7 +196,7 @@ public interface AiAutonomousConfig extends Config {
             section = ollamaSection
     )
     default String ollamaBaseUrl() {
-        return "https://ollama.lws-workspace.com";
+        return "http://localhost:11434";
     }
 
     @ConfigItem(
@@ -197,7 +206,7 @@ public interface AiAutonomousConfig extends Config {
             section = ollamaSection
     )
     default String ollamaModel() {
-        return "gemma3";
+        return "llama3";
     }
 
     @ConfigItem(
@@ -246,18 +255,18 @@ public interface AiAutonomousConfig extends Config {
             section = ragSection
     )
     default RagSystemType ragSystemType() {
-        return RagSystemType.CHROMA;
+        return RagSystemType.NEO4J;
     }
 
     @ConfigItem(
             keyName = "ragSystemUrl",
             name = "RAG System URL",
-            description = "URL for the RAG system (Chroma or Neo4j)",
+            description = "URL for the RAG system. Currently using LoadBalancer IP for Neo4j access",
             section = ragSection
     )
     default String ragSystemUrl() {
         return ragSystemType() == RagSystemType.NEO4J ?
-            "https://neo4j.lws-workspace.com" : "http://localhost:8000";
+            "http://100.105.178.55:7474" : "http://localhost:8000";
     }
 
     @ConfigItem(
@@ -277,7 +286,7 @@ public interface AiAutonomousConfig extends Config {
             section = ragSection
     )
     default String neo4jDatabase() {
-        return "runescape";
+        return "runescapeknowledge";
     }
 
     @ConfigItem(
@@ -297,7 +306,7 @@ public interface AiAutonomousConfig extends Config {
             section = ragSection
     )
     default String neo4jPassword() {
-        return "password";
+        return "runescape2025";
     }
 
     @ConfigItem(
@@ -386,6 +395,26 @@ public interface AiAutonomousConfig extends Config {
     )
     default AiGoal primaryGoal() {
         return AiGoal.BALANCED_PROGRESSION;
+    }
+
+    @ConfigItem(
+            keyName = "accountType",
+            name = "Account Type",
+            description = "Free-to-play or Members account",
+            section = strategySection
+    )
+    default AccountType accountType() {
+        return AccountType.F2P;
+    }
+
+    @ConfigItem(
+            keyName = "trainingMode",
+            name = "Training Mode",
+            description = "How to approach skill training",
+            section = strategySection
+    )
+    default TrainingMode trainingMode() {
+        return TrainingMode.BALANCED;
     }
 
     @ConfigItem(
@@ -514,11 +543,47 @@ public interface AiAutonomousConfig extends Config {
         MONEY_MAKING("Make Money"),
         PVP_TRAINING("PvP Training"),
         BALANCED_PROGRESSION("Balanced Progression"),
-        ACHIEVEMENT_HUNTING("Achievement Hunting");
+        ACHIEVEMENT_HUNTING("Achievement Hunting"),
+        BASE_MODE("Base Mode - 10 Levels Per Skill");
 
         private final String displayName;
 
         AiGoal(String displayName) {
+            this.displayName = displayName;
+        }
+
+        @Override
+        public String toString() {
+            return displayName;
+        }
+    }
+
+    enum AccountType {
+        F2P("Free-to-Play"),
+        P2P("Members");
+
+        private final String displayName;
+
+        AccountType(String displayName) {
+            this.displayName = displayName;
+        }
+
+        @Override
+        public String toString() {
+            return displayName;
+        }
+    }
+
+    enum TrainingMode {
+        BALANCED("Balanced Training"),
+        BASE_MODE("Base Mode (10 levels at a time)"),
+        EFFICIENT("Most Efficient Methods"),
+        AFK("AFK-Friendly Methods"),
+        QUEST_FOCUSED("Quest Requirements Focus");
+
+        private final String displayName;
+
+        TrainingMode(String displayName) {
             this.displayName = displayName;
         }
 

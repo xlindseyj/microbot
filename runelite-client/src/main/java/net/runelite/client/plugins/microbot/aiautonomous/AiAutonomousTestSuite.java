@@ -55,6 +55,12 @@ public class AiAutonomousTestSuite {
             log.info("=".repeat(40));
             AutoHotkeyTest.testAutoHotkeyOffline();
 
+            // Test network connectivity
+            log.info("\n" + "=".repeat(40));
+            log.info("NETWORK CONNECTIVITY TESTS");
+            log.info("=".repeat(40));
+            ConnectionTest.testNetworkConnectivity();
+
             log.info("\n" + "=".repeat(60));
             log.info("✓ All offline tests completed successfully!");
             log.info("=".repeat(60));
@@ -119,6 +125,12 @@ public class AiAutonomousTestSuite {
             log.info("=".repeat(40));
             AutoHotkeyTest.testAutoHotkeyIntegration(script, config, plugin.getKeyManager());
             AutoHotkeyTest.testAIScriptIntegration(script);
+
+            // Test all system connections
+            log.info("\n" + "=".repeat(40));
+            log.info("CONNECTION AND INTEGRATION TESTS");
+            log.info("=".repeat(40));
+            ConnectionTest.runAllTests(config);
 
             log.info("\n" + "=".repeat(60));
             log.info("✓ All comprehensive tests completed!");
@@ -223,6 +235,9 @@ public class AiAutonomousTestSuite {
 
             Class.forName("net.runelite.client.plugins.microbot.aiautonomous.AutoHotkeyTest");
             log.info("✓ AutoHotkeyTest class loaded");
+
+            Class.forName("net.runelite.client.plugins.microbot.aiautonomous.ConnectionTest");
+            log.info("✓ ConnectionTest class loaded");
 
             log.info("✓ All test classes validated successfully");
 

@@ -69,19 +69,41 @@ public class Neo4jRAGSystem implements RAGSystemInterface {
     @Override
     public boolean testConnection() {
         try {
+            log.info("Testing Neo4j connection to: {}", baseUrl);
             String query = "RETURN 1 as test";
             JsonObject result = executeCypher(query);
 
-            isConnected = result != null && !result.has("errors");
-            if (isConnected) {
-                log.info("Successfully connected to Neo4j at {}", baseUrl);
-            } else {
-                log.warn("Failed to connect to Neo4j at {}", baseUrl);
+            if (result == null) {
+                log.warn("Neo4j connection test returned null result");
+                isConnected = false;
+                return false;
             }
-            return isConnected;
+
+            if (result.has("errors")) {
+                JsonArray errors = result.getAsJsonArray("errors");
+                if (errors.size() > 0) {
+                    log.error("Neo4j connection test returned errors: {}", errors);
+                    isConnected = false;
+                    return false;
+                }
+            }
+
+            // Check if we have results
+            if (result.has("results")) {
+                JsonArray results = result.getAsJsonArray("results");
+                if (results.size() > 0) {
+                    log.info("Successfully connected to Neo4j at {}", baseUrl);
+                    isConnected = true;
+                    return true;
+                }
+            }
+
+            log.warn("Neo4j connection test - unexpected response format: {}", result);
+            isConnected = false;
+            return false;
 
         } catch (Exception e) {
-            log.error("Error testing Neo4j connection", e);
+            log.error("Error testing Neo4j connection to {}", baseUrl, e);
             isConnected = false;
             return false;
         }
@@ -374,6 +396,8 @@ public class Neo4jRAGSystem implements RAGSystemInterface {
 
     private JsonObject executeCypherWithParams(String cypher, Map<String, Object> parameters) {
         try {
+            log.debug("Executing Neo4j query: {}", cypher);
+
             JsonObject requestBody = new JsonObject();
             requestBody.addProperty("statement", cypher);
 
@@ -394,25 +418,33 @@ public class Neo4jRAGSystem implements RAGSystemInterface {
             );
 
             String credentials = Credentials.basic(username, password);
+            String url = baseUrl + "/db/" + database + "/tx/commit";
+
+            log.debug("Making Neo4j request to: {}", url);
+
             Request request = new Request.Builder()
-                    .url(baseUrl + "/db/" + database + "/tx/commit")
+                    .url(url)
                     .header("Authorization", credentials)
                     .header("Content-Type", "application/json")
                     .post(body)
                     .build();
 
             try (Response response = httpClient.newCall(request).execute()) {
+                log.debug("Neo4j response: HTTP {}", response.code());
+
                 if (response.isSuccessful()) {
                     String responseBody = response.body().string();
+                    log.debug("Neo4j response body: {}", responseBody);
                     return gson.fromJson(responseBody, JsonObject.class);
                 } else {
-                    log.error("Neo4j query failed: HTTP {}", response.code());
+                    String errorBody = response.body() != null ? response.body().string() : "no body";
+                    log.error("Neo4j query failed: HTTP {} - {}", response.code(), errorBody);
                     return null;
                 }
             }
 
         } catch (Exception e) {
-            log.error("Error executing Neo4j query", e);
+            log.error("Error executing Neo4j query: {}", cypher, e);
             return null;
         }
     }

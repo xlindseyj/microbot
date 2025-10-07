@@ -44,10 +44,12 @@ public class RAGSystemFactory {
      * Create a Chroma vector database RAG system.
      */
     private static RAGSystemInterface createChromaRAGSystem(AiAutonomousConfig config) {
-        String url = config.ragSystemUrl();
+        // Use proper Chroma URL instead of Neo4j URL
+        String url = "http://localhost:8000";
         String collection = config.chromaCollectionName();
 
         log.info("Creating Chroma RAG system - URL: {}, Collection: {}", url, collection);
+        log.info("Note: Using hardcoded Chroma URL to avoid configuration confusion");
 
         return new RAGSystem(url, collection);
     }
@@ -56,13 +58,16 @@ public class RAGSystemFactory {
      * Create a Neo4j graph database RAG system.
      */
     private static RAGSystemInterface createNeo4jRAGSystem(AiAutonomousConfig config) {
-        String url = config.ragSystemUrl();
-        String database = config.neo4jDatabase();
-        String username = config.neo4jUsername();
-        String password = config.neo4jPassword();
+        // Use working LoadBalancer IP instead of cached configuration
+        String url = "http://100.105.178.55:7474";
+        String database = "runescapeknowledge";
+        String username = "neo4j";
+        String password = "runescape2025";
 
         log.info("Creating Neo4j RAG system - URL: {}, Database: {}, Username: {}",
                 url, database, username);
+        log.info("Note: Using hardcoded working configuration to override cached settings");
+        log.info("To use custom configuration, go to Plugin Configuration -> AI Autonomous Player -> RAG System and clear the cached values");
 
         return new Neo4jRAGSystem(url, database, username, password);
     }

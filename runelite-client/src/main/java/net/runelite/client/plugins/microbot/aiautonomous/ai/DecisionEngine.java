@@ -2,6 +2,7 @@ package net.runelite.client.plugins.microbot.aiautonomous.ai;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.plugins.microbot.aiautonomous.ai.OllamaClient.GameContext;
+import net.runelite.client.plugins.microbot.aiautonomous.core.GameStateAnalyzer;
 
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
@@ -84,6 +85,33 @@ public class DecisionEngine {
             prompt.append("\n");
         }
 
+        // Add success rate analysis
+        if (knowledgeManager != null) {
+            Map<String, Double> successRates = knowledgeManager.getActionSuccessRates();
+            if (!successRates.isEmpty()) {
+                prompt.append("ACTION SUCCESS RATES (from experience):\n");
+                successRates.entrySet().stream()
+                    .sorted((e1, e2) -> Double.compare(e2.getValue(), e1.getValue()))
+                    .limit(5)
+                    .forEach(entry -> {
+                        prompt.append("- ").append(entry.getKey())
+                              .append(": ").append(String.format("%.1f%%", entry.getValue() * 100))
+                              .append(" success rate\n");
+                    });
+                prompt.append("\n");
+            }
+
+            // Add best strategies for similar contexts
+            List<String> strategies = knowledgeManager.getBestStrategiesFor(situation);
+            if (!strategies.isEmpty()) {
+                prompt.append("PROVEN STRATEGIES for similar situations:\n");
+                strategies.stream().limit(3).forEach(strategy -> {
+                    prompt.append("- ").append(strategy).append("\n");
+                });
+                prompt.append("\n");
+            }
+        }
+
         if (!recentDecisions.isEmpty()) {
             prompt.append("RECENT DECISIONS:\n");
             for (int i = Math.max(0, recentDecisions.size() - 3); i < recentDecisions.size(); i++) {
@@ -92,7 +120,9 @@ public class DecisionEngine {
             prompt.append("\n");
         }
 
-        prompt.append("What should I do? Provide a specific action with reasoning.");
+        prompt.append("Based on the situation, knowledge, and experience data above, what should I do? ");
+        prompt.append("Consider the success rates of different actions and choose the most effective approach. ");
+        prompt.append("Provide a specific action with clear reasoning.");
 
         return prompt.toString();
     }
@@ -302,6 +332,221 @@ public class DecisionEngine {
 
     public List<String> getRecentDecisions() {
         return new ArrayList<>(recentDecisions);
+    }
+
+    public void learnFromOutcome(AiDecision decision, boolean successful, String outcome,
+                               GameContext context) {
+        try {
+            log.debug("Learning from outcome - Decision: {}, Success: {}, Outcome: {}",
+                     decision.getAction(), successful, outcome);
+
+            // Record the outcome for experience-based learning
+            if (knowledgeManager != null) {
+                knowledgeManager.learnFromOutcome(decision.getOriginalSituation(),
+                                                decision, successful, outcome);
+            }
+
+            // Adjust confidence for similar future decisions
+            adjustConfidenceBasedOnOutcome(decision, successful);
+
+            // Store detailed experience based on decision category
+            storeDetailedExperience(decision, successful, outcome, context);
+
+        } catch (Exception e) {
+            log.error("Error learning from decision outcome", e);
+        }
+    }
+
+    private void adjustConfidenceBasedOnOutcome(AiDecision decision, boolean successful) {
+        // This could be used to bias future confidence calculations
+        // For now, we rely on the knowledge manager's learning system
+        String actionType = decision.getCategory().toString();
+        log.debug("Adjusting confidence for action type: {} based on {} outcome",
+                 actionType, successful ? "successful" : "failed");
+    }
+
+    private void storeDetailedExperience(AiDecision decision, boolean successful,
+                                       String outcome, GameContext context) {
+        if (knowledgeManager == null) return;
+
+        try {
+            // Convert context to GameState for experience storage
+            GameStateAnalyzer.GameState gameState = contextToGameState(context);
+
+            // Store the gameplay experience
+            knowledgeManager.storeGameplayExperience(gameState, decision.getAction(),
+                                                   outcome, successful);
+
+            // Store category-specific experiences
+            switch (decision.getCategory()) {
+                case COMBAT:
+                    storeCombatExperience(decision, successful, outcome, context);
+                    break;
+                case SKILL:
+                    storeSkillExperience(decision, successful, outcome, context);
+                    break;
+                case QUEST:
+                    storeQuestExperience(decision, successful, outcome, context);
+                    break;
+                case TRADE:
+                    storeTradeExperience(decision, successful, outcome, context);
+                    break;
+                default:
+                    // General experience already stored above
+                    break;
+            }
+
+        } catch (Exception e) {
+            log.warn("Failed to store detailed experience for decision", e);
+        }
+    }
+
+    private GameStateAnalyzer.GameState contextToGameState(GameContext context) {
+        // Convert GameContext to GameState for experience storage
+        // This is a simplified conversion - in practice you'd want full state
+        GameStateAnalyzer.GameState gameState = new GameStateAnalyzer.GameState();
+
+        if (context != null) {
+            gameState.setLocation(context.getCurrentLocation());
+            gameState.setCurrentHp(context.getCurrentHealth());
+            gameState.setMaxHp(context.getMaxHealth());
+            // Add other context fields as needed
+        }
+
+        return gameState;
+    }
+
+    private void storeCombatExperience(AiDecision decision, boolean successful,
+                                     String outcome, GameContext context) {
+        try {
+            // Extract combat details from decision and outcome
+            String opponent = extractOpponentFromDecision(decision.getAction());
+            String strategy = decision.getReasoning();
+            int damage = extractDamageFromOutcome(outcome);
+            long duration = System.currentTimeMillis() - decision.getTimestamp().toEpochMilli();
+
+            knowledgeManager.storeCombatExperience(opponent, strategy, successful, damage, duration);
+        } catch (Exception e) {
+            log.warn("Failed to store combat experience", e);
+        }
+    }
+
+    private void storeSkillExperience(AiDecision decision, boolean successful,
+                                    String outcome, GameContext context) {
+        try {
+            // Extract skill training details
+            String skill = extractSkillFromDecision(decision.getAction());
+            String method = decision.getAction();
+            long timeSpent = System.currentTimeMillis() - decision.getTimestamp().toEpochMilli();
+
+            // For now, assume level progression if successful
+            if (successful && skill != null) {
+                knowledgeManager.storeSkillProgressExperience(skill, 1, 2, method, timeSpent);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to store skill experience", e);
+        }
+    }
+
+    private void storeQuestExperience(AiDecision decision, boolean successful,
+                                    String outcome, GameContext context) {
+        try {
+            String questName = extractQuestFromDecision(decision.getAction());
+            String step = decision.getAction();
+            List<String> requirements = List.of(); // Could be extracted from reasoning
+            String strategy = decision.getReasoning();
+
+            if (questName != null) {
+                knowledgeManager.storeQuestExperience(questName, step, successful,
+                                                    requirements, strategy);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to store quest experience", e);
+        }
+    }
+
+    private void storeTradeExperience(AiDecision decision, boolean successful,
+                                    String outcome, GameContext context) {
+        try {
+            // Store trading experience - could be expanded with price analysis
+            String item = extractItemFromDecision(decision.getAction());
+            String method = decision.getAction();
+            int quantity = extractQuantityFromOutcome(outcome);
+            long timeSpent = System.currentTimeMillis() - decision.getTimestamp().toEpochMilli();
+
+            if (item != null) {
+                knowledgeManager.storeResourceGatheringExperience(item, method, quantity, timeSpent);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to store trade experience", e);
+        }
+    }
+
+    // Helper methods for extracting information from decisions and outcomes
+    private String extractOpponentFromDecision(String action) {
+        // Simple extraction - could be more sophisticated
+        if (action.toLowerCase().contains("attack")) {
+            String[] words = action.split(" ");
+            for (int i = 0; i < words.length - 1; i++) {
+                if (words[i].toLowerCase().equals("attack")) {
+                    return words[i + 1];
+                }
+            }
+        }
+        return "unknown";
+    }
+
+    private String extractSkillFromDecision(String action) {
+        String[] skills = {"mining", "woodcutting", "fishing", "cooking", "smithing",
+                          "crafting", "fletching", "runecrafting", "construction", "agility"};
+        String lowerAction = action.toLowerCase();
+
+        for (String skill : skills) {
+            if (lowerAction.contains(skill)) {
+                return skill;
+            }
+        }
+        return null;
+    }
+
+    private String extractQuestFromDecision(String action) {
+        if (action.toLowerCase().contains("quest")) {
+            // Extract quest name - simplified
+            return "unknown_quest";
+        }
+        return null;
+    }
+
+    private String extractItemFromDecision(String action) {
+        // Extract item names from trading actions
+        if (action.toLowerCase().contains("buy") || action.toLowerCase().contains("sell")) {
+            String[] words = action.split(" ");
+            for (int i = 0; i < words.length - 1; i++) {
+                if (words[i].toLowerCase().matches("buy|sell")) {
+                    return words[i + 1];
+                }
+            }
+        }
+        return null;
+    }
+
+    private int extractDamageFromOutcome(String outcome) {
+        // Extract damage numbers from outcome text
+        try {
+            String[] words = outcome.split(" ");
+            for (String word : words) {
+                if (word.matches("\\d+")) {
+                    return Integer.parseInt(word);
+                }
+            }
+        } catch (Exception e) {
+            // Ignore parsing errors
+        }
+        return 0;
+    }
+
+    private int extractQuantityFromOutcome(String outcome) {
+        return extractDamageFromOutcome(outcome); // Same extraction logic
     }
 
     public KnowledgeManager getKnowledgeManager() {

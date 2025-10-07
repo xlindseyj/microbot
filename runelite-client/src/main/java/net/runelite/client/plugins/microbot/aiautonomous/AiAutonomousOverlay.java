@@ -27,7 +27,7 @@ public class AiAutonomousOverlay extends OverlayPanel {
 
     @Override
     public Dimension render(Graphics2D graphics) {
-        if (!plugin.getConfig().enablePlugin()) {
+        if (!plugin.getConfig().enablePlugin() || !plugin.getConfig().showOverlay()) {
             return null;
         }
 
@@ -37,6 +37,44 @@ public class AiAutonomousOverlay extends OverlayPanel {
         panelComponent.getChildren().add(TitleComponent.builder()
                 .text("AI Autonomous Player")
                 .color(plugin.isInitialized() ? Color.GREEN : Color.RED)
+                .build());
+
+        // Connection status first
+        Color connectionColor = Color.GREEN;
+        String connectionStatus = "Connected";
+
+        if (plugin.getOllamaClient() != null && !plugin.getOllamaClient().isConnected()) {
+            connectionColor = Color.RED;
+            connectionStatus = "Disconnected";
+        }
+
+        panelComponent.getChildren().add(LineComponent.builder()
+                .left("Ollama:")
+                .right(connectionStatus)
+                .rightColor(connectionColor)
+                .build());
+
+        // RAG status
+        if (plugin.getRagSystem() != null) {
+            panelComponent.getChildren().add(LineComponent.builder()
+                    .left("RAG:")
+                    .right(plugin.getRagSystem().isConnected() ? "Online" : "Offline")
+                    .rightColor(plugin.getRagSystem().isConnected() ? Color.GREEN : Color.RED)
+                    .build());
+        }
+
+        // AI Model info
+        if (plugin.getConfig().debugMode()) {
+            panelComponent.getChildren().add(LineComponent.builder()
+                    .left("Model:")
+                    .right(plugin.getConfig().ollamaModel())
+                    .build());
+        }
+
+        // Divider line
+        panelComponent.getChildren().add(LineComponent.builder()
+                .left("─────────────────────────")
+                .leftColor(Color.GRAY)
                 .build());
 
         // Status
@@ -55,12 +93,24 @@ public class AiAutonomousOverlay extends OverlayPanel {
             return super.render(graphics);
         }
 
+        // Account type and training mode
+        panelComponent.getChildren().add(LineComponent.builder()
+                .left("Account:")
+                .right(plugin.getConfig().accountType().toString())
+                .rightColor(plugin.getConfig().accountType().toString().equals("Members") ? Color.YELLOW : Color.CYAN)
+                .build());
+
+        panelComponent.getChildren().add(LineComponent.builder()
+                .left("Mode:")
+                .right(plugin.getConfig().trainingMode().toString())
+                .build());
+
         // Current decision
         String lastDecision = plugin.getLastDecision();
         if (lastDecision != null && !lastDecision.isEmpty()) {
             panelComponent.getChildren().add(LineComponent.builder()
                     .left("Last Decision:")
-                    .right(truncateText(lastDecision, 30))
+                    .right(truncateText(lastDecision, 40)) // Increased from 30 to 40
                     .build());
         }
 
@@ -74,7 +124,7 @@ public class AiAutonomousOverlay extends OverlayPanel {
         if (plugin.getConfig().debugMode()) {
             panelComponent.getChildren().add(LineComponent.builder()
                     .left("Knowledge:")
-                    .right(plugin.getKnowledgeStats())
+                    .right(truncateText(plugin.getKnowledgeStats(), 50))
                     .build());
         }
 
@@ -98,40 +148,19 @@ public class AiAutonomousOverlay extends OverlayPanel {
         // Current goal
         panelComponent.getChildren().add(LineComponent.builder()
                 .left("Goal:")
-                .right(plugin.getConfig().primaryGoal().toString())
+                .right(truncateText(plugin.getConfig().primaryGoal().toString(), 35))
                 .build());
 
-        // AI Model info
-        if (plugin.getConfig().debugMode()) {
+        // Base mode specific info
+        if (isBaseModeActive() && plugin.getBaseModeTrainer() != null) {
+            String status = plugin.getBaseModeTrainer().getCurrentTrainingStatus();
             panelComponent.getChildren().add(LineComponent.builder()
-                    .left("Model:")
-                    .right(plugin.getConfig().ollamaModel())
+                    .left("Base Mode:")
+                    .right(truncateText(status, 45))
+                    .rightColor(Color.CYAN)
                     .build());
         }
 
-        // Connection status
-        Color connectionColor = Color.GREEN;
-        String connectionStatus = "Connected";
-
-        if (plugin.getOllamaClient() != null && !plugin.getOllamaClient().isConnected()) {
-            connectionColor = Color.RED;
-            connectionStatus = "Disconnected";
-        }
-
-        panelComponent.getChildren().add(LineComponent.builder()
-                .left("Ollama:")
-                .right(connectionStatus)
-                .rightColor(connectionColor)
-                .build());
-
-        // RAG status
-        if (plugin.getRagSystem() != null) {
-            panelComponent.getChildren().add(LineComponent.builder()
-                    .left("RAG:")
-                    .right(plugin.getRagSystem().isConnected() ? "Online" : "Offline")
-                    .rightColor(plugin.getRagSystem().isConnected() ? Color.GREEN : Color.RED)
-                    .build());
-        }
 
         // Emergency stop indicator
         if (plugin.getConfig().debugMode()) {
@@ -182,5 +211,10 @@ public class AiAutonomousOverlay extends OverlayPanel {
         long seconds = duration.toSecondsPart();
 
         return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+    }
+
+    private boolean isBaseModeActive() {
+        return plugin.getConfig().primaryGoal() == AiAutonomousConfig.AiGoal.BASE_MODE ||
+               plugin.getConfig().trainingMode() == AiAutonomousConfig.TrainingMode.BASE_MODE;
     }
 }
