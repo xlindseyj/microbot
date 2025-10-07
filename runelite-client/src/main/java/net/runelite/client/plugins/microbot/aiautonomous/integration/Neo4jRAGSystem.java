@@ -386,6 +386,96 @@ public class Neo4jRAGSystem implements RAGSystemInterface {
     }
 
     @Override
+    public CompletableFuture<Boolean> storeDocument(String id, String content, Map<String, Object> metadata) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                if (!isReady()) {
+                    log.warn("Neo4j RAG system not ready for storing document");
+                    return false;
+                }
+
+                String cypher =
+                    "MERGE (d:Document {id: $id}) " +
+                    "SET d.content = $content, " +
+                    "    d.type = $type, " +
+                    "    d.created_timestamp = timestamp(), " +
+                    "    d.updated_timestamp = timestamp() " +
+                    "RETURN d.id as id";
+
+                Map<String, Object> parameters = new HashMap<>();
+                parameters.put("id", id);
+                parameters.put("content", content);
+                parameters.put("type", metadata != null ? metadata.getOrDefault("type", "document") : "document");
+
+                // Add any additional metadata as properties
+                if (metadata != null) {
+                    for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+                        if (!entry.getKey().equals("type")) {
+                            parameters.put("d_" + entry.getKey(), entry.getValue());
+                            cypher = cypher.replace("SET d.content = $content, ",
+                                "SET d.content = $content, d." + entry.getKey() + " = $d_" + entry.getKey() + ", ");
+                        }
+                    }
+                }
+
+                JsonObject result = executeCypherWithParams(cypher, parameters);
+                boolean success = result != null && !result.has("errors");
+
+                if (success) {
+                    log.debug("Stored document in Neo4j: {}", id);
+                } else {
+                    log.error("Failed to store document in Neo4j");
+                }
+
+                return success;
+
+            } catch (Exception e) {
+                log.error("Error storing document in Neo4j", e);
+                return false;
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<List<KnowledgeEntry>> searchDocuments(String query, int maxResults) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                if (!isReady()) {
+                    log.warn("Neo4j RAG system not ready for search");
+                    return new ArrayList<>();
+                }
+
+                // Search both Knowledge and Document nodes
+                String cypher =
+                    "CALL { " +
+                    "  CALL db.index.fulltext.queryNodes('knowledge_content', $query) " +
+                    "  YIELD node, score " +
+                    "  WHERE node:Knowledge " +
+                    "  RETURN node.id as id, node.content as content, 'knowledge' as nodeType, score " +
+                    "  UNION " +
+                    "  MATCH (d:Document) " +
+                    "  WHERE d.content CONTAINS $query " +
+                    "  RETURN d.id as id, d.content as content, 'document' as nodeType, 1.0 as score " +
+                    "} " +
+                    "RETURN id, content, nodeType, score " +
+                    "ORDER BY score DESC " +
+                    "LIMIT $maxResults";
+
+                Map<String, Object> parameters = new HashMap<>();
+                parameters.put("query", query);
+                parameters.put("maxResults", maxResults);
+
+                JsonObject result = executeCypherWithParams(cypher, parameters);
+                return parseDocumentSearchResults(result);
+
+            } catch (Exception e) {
+                log.error("Error searching documents in Neo4j", e);
+                return new ArrayList<>();
+            }
+        });
+    }
+
+    @Override
     public void shutdown() {
         log.info("Neo4j RAG system shutdown");
     }
@@ -626,6 +716,46 @@ public class Neo4jRAGSystem implements RAGSystemInterface {
 
         } catch (Exception e) {
             log.error("Error parsing Neo4j search results", e);
+        }
+
+        return results;
+    }
+
+    private List<KnowledgeEntry> parseDocumentSearchResults(JsonObject result) {
+        List<KnowledgeEntry> results = new ArrayList<>();
+
+        try {
+            if (result.has("errors") && result.getAsJsonArray("errors").size() > 0) {
+                log.error("Neo4j document search returned errors: {}", result.getAsJsonArray("errors"));
+                return results;
+            }
+
+            JsonArray data = result.getAsJsonArray("results")
+                    .get(0).getAsJsonObject()
+                    .getAsJsonArray("data");
+
+            for (int i = 0; i < data.size(); i++) {
+                JsonArray row = data.get(i).getAsJsonObject().getAsJsonArray("row");
+
+                String id = row.get(0).getAsString();
+                String content = row.get(1).getAsString();
+                String nodeType = row.get(2).getAsString();
+                double score = row.get(3).getAsDouble();
+
+                KnowledgeEntry entry = new KnowledgeEntry();
+                entry.setId(id);
+                entry.setContent(content);
+                entry.setSimilarity(score);
+
+                Map<String, String> metadata = new HashMap<>();
+                metadata.put("type", nodeType);
+                entry.setMetadata(metadata);
+
+                results.add(entry);
+            }
+
+        } catch (Exception e) {
+            log.error("Error parsing Neo4j document search results", e);
         }
 
         return results;
