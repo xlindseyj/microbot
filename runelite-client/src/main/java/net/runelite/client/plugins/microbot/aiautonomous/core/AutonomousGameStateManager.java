@@ -28,6 +28,7 @@ public class AutonomousGameStateManager {
 
     // Current decision and execution tracking
     private AiDecision currentDecision;
+    private long lastEmergencyLog = 0;
     private CompletableFuture<Boolean> currentExecution;
     private int consecutiveErrors = 0;
     private Instant lastErrorTime = Instant.MIN;
@@ -130,7 +131,23 @@ public class AutonomousGameStateManager {
     }
 
     private void handleEmergencyState(GameContext gameContext) {
-        log.warn("In emergency state, attempting to recover");
+        // Add timeout to prevent endless emergency loops
+        if (stateStartTime != null) {
+            Duration emergencyDuration = Duration.between(stateStartTime, Instant.now());
+            if (emergencyDuration.compareTo(Duration.ofMinutes(2)) > 0) {
+                log.warn("Emergency state timeout after {} minutes, forcing recovery", emergencyDuration.toMinutes());
+                transitionToState(AutonomousGameState.IDLE);
+                return;
+            }
+        }
+
+        // Reduce log spam - only log every 5 seconds
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastEmergencyLog > 5000) {
+            log.warn("In emergency state, attempting to recover ({}s elapsed)",
+                    stateStartTime != null ? Duration.between(stateStartTime, Instant.now()).getSeconds() : 0);
+            lastEmergencyLog = currentTime;
+        }
 
         if (!gameStateAnalyzer.isInDangerousState()) {
             log.info("Emergency resolved, returning to normal operation");
