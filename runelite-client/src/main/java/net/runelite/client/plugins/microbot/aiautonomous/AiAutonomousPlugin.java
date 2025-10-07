@@ -29,13 +29,14 @@ import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.input.KeyManager;
 
 import javax.inject.Inject;
+import javax.swing.SwingUtilities;
 import java.awt.*;
 
 
 @PluginDescriptor(
-        name = "[Kromite] AI Autonomous Player",
-        description = "AI-powered autonomous RuneScape player using Ollama and external knowledge sources",
-        tags = {"ai", "autonomous", "microbot", "ollama", "rag"},
+        name = "AI Autonomous Player",
+        description = "AI-powered autonomous RuneScape player using Ollama, Neo4j, and RAG systems",
+        tags = {"ai", "autonomous", "microbot", "ollama", "neo4j", "rag"},
         authors = {"Kromite"},
         version = "1.0.0",
         enabledByDefault = false,
@@ -99,8 +100,17 @@ public class AiAutonomousPlugin extends Plugin {
         initializeComponents();
 
         if (config.enablePlugin()) {
-            script = new AiAutonomousScript(this);
-            script.run(config);
+            // Add a small delay to ensure all async initialization completes
+            SwingUtilities.invokeLater(() -> {
+                try {
+                    Thread.sleep(1000); // Give async operations time to complete
+                    script = new AiAutonomousScript(this);
+                    script.run(config);
+                } catch (InterruptedException e) {
+                    log.error("Script startup interrupted", e);
+                    Thread.currentThread().interrupt();
+                }
+            });
         }
     }
 
@@ -115,6 +125,12 @@ public class AiAutonomousPlugin extends Plugin {
 
         if (overlayManager != null && overlay != null) {
             overlayManager.remove(overlay);
+        }
+
+        // Close desktop UI when plugin shuts down
+        if (desktopUI != null) {
+            desktopUI.hideUI();
+            log.info("Desktop UI closed");
         }
 
         if (gameMemory != null) {

@@ -135,13 +135,68 @@ public class Neo4jRAGSystem implements RAGSystemInterface {
                 parameters.put("maxResults", maxResults);
 
                 JsonObject result = executeCypherWithParams(cypher, parameters);
+
+                // Check if the result contains an error about missing fulltext index
+                if (result != null && result.has("errors")) {
+                    JsonArray errors = result.getAsJsonArray("errors");
+                    boolean hasIndexError = false;
+                    for (int i = 0; i < errors.size(); i++) {
+                        JsonObject error = errors.get(i).getAsJsonObject();
+                        if (error.has("message") &&
+                            error.get("message").getAsString().contains("knowledge_content")) {
+                            hasIndexError = true;
+                            break;
+                        }
+                    }
+
+                    if (hasIndexError) {
+                        log.warn("Fulltext index missing, falling back to basic text search");
+                        return performFallbackSearch(query, maxResults, minSimilarity);
+                    }
+                }
+
                 return parseSearchResults(result, minSimilarity);
 
             } catch (Exception e) {
                 log.error("Error searching Neo4j knowledge", e);
-                return new ArrayList<>();
+                // Try fallback search as last resort
+                try {
+                    return performFallbackSearch(query, maxResults, minSimilarity);
+                } catch (Exception fallbackError) {
+                    log.error("Fallback search also failed", fallbackError);
+                    return new ArrayList<>();
+                }
             }
         });
+    }
+
+    /**
+     * Fallback search method that doesn't rely on fulltext index
+     */
+    private List<KnowledgeEntry> performFallbackSearch(String query, int maxResults, double minSimilarity) {
+        try {
+            // Basic text search using CONTAINS instead of fulltext index
+            String cypher =
+                "MATCH (k:Knowledge) " +
+                "WHERE toLower(k.content) CONTAINS toLower($query) " +
+                "   OR toLower(k.category) CONTAINS toLower($query) " +
+                "   OR toLower(k.type) CONTAINS toLower($query) " +
+                "RETURN k.id as id, k.content as content, k.category as category, " +
+                "       k.type as type, k.priority as priority, 0.5 as score " +
+                "ORDER BY k.priority DESC, size(k.content) ASC " +
+                "LIMIT $maxResults";
+
+            Map<String, Object> parameters = new HashMap<>();
+            parameters.put("query", query);
+            parameters.put("maxResults", maxResults);
+
+            JsonObject result = executeCypherWithParams(cypher, parameters);
+            return parseSearchResults(result, 0.0); // Lower threshold for fallback
+
+        } catch (Exception e) {
+            log.error("Error in fallback search", e);
+            return new ArrayList<>();
+        }
     }
 
     @Override
@@ -241,12 +296,38 @@ public class Neo4jRAGSystem implements RAGSystemInterface {
                 parameters.put("entries", entryMaps);
 
                 JsonObject result = executeCypherWithParams(cypherBuilder.toString(), parameters);
-                boolean success = result != null && !result.has("errors");
+                boolean success = false;
 
-                if (success) {
-                    log.info("Added {} knowledge entries to Neo4j", entries.size());
+                if (result != null) {
+                    // Check if there are errors
+                    if (result.has("errors")) {
+                        JsonArray errors = result.getAsJsonArray("errors");
+                        if (errors.size() > 0) {
+                            log.error("Failed to add knowledge batch to Neo4j - errors: {}", errors);
+                            success = false;
+                        } else {
+                            // No errors, check if we have data indicating success
+                            success = result.has("data");
+                            if (success) {
+                                log.info("Added {} knowledge entries to Neo4j", entries.size());
+                            } else {
+                                log.warn("Neo4j batch operation completed but no data returned");
+                                success = true; // Assume success if no errors and query executed
+                            }
+                        }
+                    } else {
+                        // No errors property, check for data
+                        success = result.has("data");
+                        if (success) {
+                            log.info("Added {} knowledge entries to Neo4j", entries.size());
+                        } else {
+                            log.warn("Neo4j batch operation completed but no data or errors returned");
+                            success = true; // Assume success if query executed without errors
+                        }
+                    }
                 } else {
-                    log.error("Failed to add knowledge batch to Neo4j");
+                    log.error("Failed to add knowledge batch to Neo4j - null result");
+                    success = false;
                 }
 
                 return success;
@@ -466,13 +547,74 @@ public class Neo4jRAGSystem implements RAGSystemInterface {
                 parameters.put("maxResults", maxResults);
 
                 JsonObject result = executeCypherWithParams(cypher, parameters);
+
+                // Check if the result contains an error about missing fulltext index
+                if (result != null && result.has("errors")) {
+                    JsonArray errors = result.getAsJsonArray("errors");
+                    boolean hasIndexError = false;
+                    for (int i = 0; i < errors.size(); i++) {
+                        JsonObject error = errors.get(i).getAsJsonObject();
+                        if (error.has("message") &&
+                            error.get("message").getAsString().contains("knowledge_content")) {
+                            hasIndexError = true;
+                            break;
+                        }
+                    }
+
+                    if (hasIndexError) {
+                        log.warn("Fulltext index missing in searchDocuments, falling back to basic text search");
+                        return performFallbackDocumentSearch(query, maxResults);
+                    }
+                }
+
                 return parseDocumentSearchResults(result);
 
             } catch (Exception e) {
                 log.error("Error searching documents in Neo4j", e);
-                return new ArrayList<>();
+                // Try fallback search as last resort
+                try {
+                    return performFallbackDocumentSearch(query, maxResults);
+                } catch (Exception fallbackError) {
+                    log.error("Fallback document search also failed", fallbackError);
+                    return new ArrayList<>();
+                }
             }
         });
+    }
+
+    /**
+     * Fallback document search method that doesn't rely on fulltext index
+     */
+    private List<KnowledgeEntry> performFallbackDocumentSearch(String query, int maxResults) {
+        try {
+            // Basic text search using CONTAINS instead of fulltext index
+            String cypher =
+                "CALL { " +
+                "  MATCH (k:Knowledge) " +
+                "  WHERE toLower(k.content) CONTAINS toLower($query) " +
+                "     OR toLower(k.category) CONTAINS toLower($query) " +
+                "     OR toLower(k.type) CONTAINS toLower($query) " +
+                "  RETURN k.id as id, k.content as content, 'knowledge' as nodeType, 0.5 as score " +
+                "  UNION " +
+                "  MATCH (d:Document) " +
+                "  WHERE toLower(d.content) CONTAINS toLower($query) " +
+                "  RETURN d.id as id, d.content as content, 'document' as nodeType, 0.5 as score " +
+                "} " +
+                "RETURN id, content, nodeType, score " +
+                "ORDER BY score DESC, size(content) ASC " +
+                "LIMIT $maxResults";
+
+            Map<String, Object> parameters = new HashMap<>();
+            parameters.put("query", query);
+            parameters.put("maxResults", maxResults);
+
+            JsonObject result = executeCypherWithParams(cypher, parameters);
+            return parseDocumentSearchResults(result);
+
+        } catch (Exception e) {
+            log.error("Error in fallback document search", e);
+            return new ArrayList<>();
+        }
     }
 
     @Override
@@ -541,20 +683,61 @@ public class Neo4jRAGSystem implements RAGSystemInterface {
 
     private void createSchema() {
         try {
-            // Create fulltext index for content search
-            String createIndex =
-                "CALL db.index.fulltext.createNodeIndex('knowledge_content', ['Knowledge'], ['content'])";
-            executeCypher(createIndex);
+            // First check if the fulltext index already exists
+            String checkIndex = "SHOW INDEXES YIELD name WHERE name = 'knowledge_content'";
+            JsonObject indexResult = executeCypher(checkIndex);
+
+            boolean indexExists = false;
+            if (indexResult != null && indexResult.has("data")) {
+                JsonArray data = indexResult.getAsJsonArray("data");
+                indexExists = data.size() > 0;
+            }
+
+            if (!indexExists) {
+                log.info("Creating fulltext index 'knowledge_content'...");
+                // Create fulltext index for content search
+                String createIndex =
+                    "CALL db.index.fulltext.createNodeIndex('knowledge_content', ['Knowledge'], ['content'])";
+                JsonObject result = executeCypher(createIndex);
+
+                if (result != null) {
+                    log.info("Successfully created fulltext index 'knowledge_content'");
+
+                    // Wait for index to be ready
+                    Thread.sleep(2000);
+
+                    // Verify index was created
+                    JsonObject verifyResult = executeCypher(checkIndex);
+                    if (verifyResult != null && verifyResult.has("data")) {
+                        JsonArray verifyData = verifyResult.getAsJsonArray("data");
+                        if (verifyData.size() > 0) {
+                            log.info("Verified fulltext index 'knowledge_content' is ready");
+                        } else {
+                            log.error("Fulltext index 'knowledge_content' was not created successfully");
+                        }
+                    }
+                } else {
+                    log.error("Failed to create fulltext index 'knowledge_content' - null result");
+                }
+            } else {
+                log.info("Fulltext index 'knowledge_content' already exists");
+            }
 
             // Create constraint for unique knowledge IDs
             String createConstraint =
                 "CREATE CONSTRAINT knowledge_id_unique IF NOT EXISTS FOR (k:Knowledge) REQUIRE k.id IS UNIQUE";
-            executeCypher(createConstraint);
+            JsonObject constraintResult = executeCypher(createConstraint);
+
+            if (constraintResult != null) {
+                log.info("Created or verified unique constraint for knowledge IDs");
+            } else {
+                log.warn("Failed to create constraint for knowledge IDs");
+            }
 
             log.info("Created Neo4j schema for knowledge base");
 
         } catch (Exception e) {
-            log.warn("Failed to create Neo4j schema (may already exist)", e);
+            log.error("Failed to create Neo4j schema", e);
         }
     }
 

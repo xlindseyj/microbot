@@ -561,13 +561,17 @@ public class AiAutonomousDesktopUI extends JFrame {
 
     public void showUI() {
         SwingUtilities.invokeLater(() -> {
-            setVisible(true);
-            toFront();
-            addLogEntry("AI Autonomous Desktop UI launched");
-            addLogEntry("Account Type: " + plugin.getConfig().accountType());
-            addLogEntry("Training Mode: " + plugin.getConfig().trainingMode());
-            if (isBaseModeActive()) {
-                addLogEntry("Base Mode active - Training skills in 10-level increments");
+            if (!isVisible()) {
+                setVisible(true);
+                toFront();
+                addLogEntry("AI Autonomous Desktop UI launched");
+                addLogEntry("Account Type: " + plugin.getConfig().accountType());
+                addLogEntry("Training Mode: " + plugin.getConfig().trainingMode());
+                if (isBaseModeActive()) {
+                    addLogEntry("Base Mode active - Training skills in 10-level increments");
+                }
+            } else {
+                toFront(); // Just bring to front if already visible
             }
         });
     }
