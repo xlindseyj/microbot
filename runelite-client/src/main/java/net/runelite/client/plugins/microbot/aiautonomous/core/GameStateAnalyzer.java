@@ -103,19 +103,26 @@ public class GameStateAnalyzer {
         try {
             // Check if in dangerous area
             String currentArea = getCurrentArea();
-            if (dangerousAreas.stream().anyMatch(currentArea::contains)) {
+            boolean inDangerousArea = dangerousAreas.stream().anyMatch(currentArea::contains);
+            if (inDangerousArea) {
+                log.debug("In dangerous area: {}", currentArea);
                 return true;
             }
 
             // Check health status
             int currentHealth = client.getBoostedSkillLevel(Skill.HITPOINTS);
             int maxHealth = client.getRealSkillLevel(Skill.HITPOINTS);
-            if (currentHealth < maxHealth * 0.3) { // Less than 30% health
+            boolean lowHealth = currentHealth < maxHealth * 0.3; // Less than 30% health
+            if (lowHealth) {
+                log.debug("Low health detected: {}/{} ({}%)", currentHealth, maxHealth,
+                         (int)((double)currentHealth / maxHealth * 100));
                 return true;
             }
 
             // Check for dangerous NPCs nearby
-            if (hasNearbyDangerousNpcs()) {
+            boolean nearbyDanger = hasNearbyDangerousNpcs();
+            if (nearbyDanger) {
+                log.debug("Dangerous NPCs detected nearby");
                 return true;
             }
 
