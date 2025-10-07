@@ -703,17 +703,35 @@ public class Neo4jRAGSystem implements RAGSystemInterface {
                 if (result != null) {
                     log.info("Successfully created fulltext index 'knowledge_content'");
 
-                    // Wait for index to be ready
-                    Thread.sleep(2000);
+                    // Wait for index to be ready and check status
+                    for (int attempt = 0; attempt < 10; attempt++) {
+                        Thread.sleep(1000);
 
-                    // Verify index was created
-                    JsonObject verifyResult = executeCypher(checkIndex);
-                    if (verifyResult != null && verifyResult.has("data")) {
-                        JsonArray verifyData = verifyResult.getAsJsonArray("data");
-                        if (verifyData.size() > 0) {
-                            log.info("Verified fulltext index 'knowledge_content' is ready");
-                        } else {
-                            log.error("Fulltext index 'knowledge_content' was not created successfully");
+                        // Check index status (including if it's ONLINE)
+                        String statusCheck = "SHOW INDEXES YIELD name, state WHERE name = 'knowledge_content'";
+                        JsonObject statusResult = executeCypher(statusCheck);
+
+                        if (statusResult != null && statusResult.has("data")) {
+                            JsonArray statusData = statusResult.getAsJsonArray("data");
+                            if (statusData.size() > 0) {
+                                JsonArray row = statusData.get(0).getAsJsonArray();
+                                if (row.size() >= 2) {
+                                    String indexName = row.get(0).getAsString();
+                                    String indexState = row.get(1).getAsString();
+                                    log.info("Index '{}' status: {}", indexName, indexState);
+
+                                    if ("ONLINE".equals(indexState)) {
+                                        log.info("Fulltext index 'knowledge_content' is ONLINE and ready");
+                                        break;
+                                    } else {
+                                        log.info("Waiting for index to come online... (attempt {}/10)", attempt + 1);
+                                    }
+                                }
+                            }
+                        }
+
+                        if (attempt == 9) {
+                            log.warn("Index may not be fully ready, proceeding anyway");
                         }
                     }
                 } else {

@@ -99,19 +99,7 @@ public class AiAutonomousPlugin extends Plugin {
 
         initializeComponents();
 
-        if (config.enablePlugin()) {
-            // Add a small delay to ensure all async initialization completes
-            SwingUtilities.invokeLater(() -> {
-                try {
-                    Thread.sleep(1000); // Give async operations time to complete
-                    script = new AiAutonomousScript(this);
-                    script.run(config);
-                } catch (InterruptedException e) {
-                    log.error("Script startup interrupted", e);
-                    Thread.currentThread().interrupt();
-                }
-            });
-        }
+        // Note: Script will be created and started manually by user when they're ready and logged in
     }
 
     @Override
@@ -208,9 +196,7 @@ public class AiAutonomousPlugin extends Plugin {
                 log.info("Real-time strategy adjuster initialized");
             }
 
-            // Initialize desktop UI
-            desktopUI = new AiAutonomousDesktopUI(this);
-            log.info("Desktop UI initialized");
+            // Note: Desktop UI will be created when first needed to avoid startup conflicts
 
             if (config.enableActionExecution()) {
                 actionExecutor = new ActionExecutor(client, config);
@@ -239,11 +225,7 @@ public class AiAutonomousPlugin extends Plugin {
             initialized = true;
             log.info("AI Autonomous Player components initialized successfully");
 
-            // Show desktop UI after all components are initialized
-            if (desktopUI != null) {
-                desktopUI.showUI();
-                log.info("Desktop UI launched");
-            }
+            // Note: Desktop UI will be shown when script is activated and player is logged in
 
         } catch (Exception e) {
             log.error("Failed to initialize AI components", e);
@@ -404,7 +386,59 @@ public class AiAutonomousPlugin extends Plugin {
     }
 
     public AiAutonomousDesktopUI getDesktopUI() {
+        if (desktopUI == null) {
+            try {
+                desktopUI = new AiAutonomousDesktopUI(this);
+                log.info("Desktop UI initialized lazily");
+            } catch (Exception e) {
+                log.error("Failed to create desktop UI", e);
+                return null;
+            }
+        }
         return desktopUI;
+    }
+
+    /**
+     * Start the AI script manually (called by hotkeys, UI buttons, etc.)
+     */
+    public void startScript() {
+        if (script != null && script.isRunning()) {
+            log.warn("Script is already running");
+            return;
+        }
+
+        if (!initialized) {
+            log.error("Cannot start script - plugin not initialized");
+            Microbot.showMessage("AI Autonomous Player: Plugin not initialized");
+            return;
+        }
+
+        if (!Microbot.isLoggedIn()) {
+            log.error("Cannot start script - player not logged in");
+            Microbot.showMessage("AI Autonomous Player: Please log in first");
+            return;
+        }
+
+        try {
+            log.info("Starting AI Autonomous Script manually...");
+            script = new AiAutonomousScript(this);
+            script.run(config);
+            log.info("AI Autonomous Script started successfully");
+        } catch (Exception e) {
+            log.error("Failed to start AI script", e);
+            Microbot.showMessage("AI Autonomous Player: Failed to start - " + e.getMessage());
+        }
+    }
+
+    /**
+     * Stop the AI script manually
+     */
+    public void stopScript() {
+        if (script != null) {
+            script.shutdown();
+            script = null;
+            log.info("AI Autonomous Script stopped manually");
+        }
     }
 
     private boolean isBaseModeActive() {

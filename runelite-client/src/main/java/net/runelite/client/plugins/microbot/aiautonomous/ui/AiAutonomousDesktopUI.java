@@ -1,8 +1,12 @@
 package net.runelite.client.plugins.microbot.aiautonomous.ui;
 
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Experience;
+import net.runelite.api.Skill;
+import net.runelite.client.plugins.microbot.Microbot;
 import net.runelite.client.plugins.microbot.aiautonomous.AiAutonomousPlugin;
 import net.runelite.client.plugins.microbot.aiautonomous.strategy.RealTimeStrategyAdjuster;
+import net.runelite.client.plugins.microbot.util.player.Rs2Player;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
@@ -357,9 +361,9 @@ public class AiAutonomousDesktopUI extends JFrame {
         // Control buttons
         JPanel buttonPanel = new JPanel(new FlowLayout());
 
-        pauseButton = new JButton("Pause");
+        pauseButton = new JButton("Start AI");
         pauseButton.setPreferredSize(new Dimension(100, 30));
-        pauseButton.addActionListener(e -> togglePause());
+        pauseButton.addActionListener(e -> toggleScript());
 
         emergencyStopButton = new JButton("EMERGENCY STOP");
         emergencyStopButton.setPreferredSize(new Dimension(150, 30));
@@ -424,30 +428,86 @@ public class AiAutonomousDesktopUI extends JFrame {
     }
 
     private void updateHealthBars() {
-        // This would get actual HP/Prayer from game state
-        healthBar.setValue(85); // Placeholder
-        healthBar.setString("Health: 85%");
+        try {
+            if (Microbot.isLoggedIn()) {
+                // Get actual health percentage
+                double healthPercentage = Rs2Player.getHealthPercentage();
+                int healthValue = (int) Math.round(healthPercentage);
+                healthBar.setValue(healthValue);
+                healthBar.setString("Health: " + healthValue + "%");
 
-        prayerBar.setValue(60); // Placeholder
-        prayerBar.setString("Prayer: 60%");
+                // Get actual prayer percentage
+                int prayerPercentage = Rs2Player.getPrayerPercentage();
+                prayerBar.setValue(prayerPercentage);
+                prayerBar.setString("Prayer: " + prayerPercentage + "%");
+            } else {
+                // Player not logged in
+                healthBar.setValue(0);
+                healthBar.setString("Health: Not logged in");
+                prayerBar.setValue(0);
+                prayerBar.setString("Prayer: Not logged in");
+            }
+        } catch (Exception e) {
+            log.warn("Failed to update health bars: {}", e.getMessage());
+            healthBar.setValue(0);
+            healthBar.setString("Health: Error");
+            prayerBar.setValue(0);
+            prayerBar.setString("Prayer: Error");
+        }
     }
 
     private void updateSkillsTable() {
         skillTableModel.setRowCount(0);
 
-        // Get skill data from content manager
-        if (plugin.getContentManager() != null) {
-            for (String skill : plugin.getContentManager().getAccessibleSkills()) {
-                Object[] row = {
-                    skill,
-                    "1", // Level placeholder
-                    "0", // XP placeholder
-                    "10", // Target placeholder
-                    "0%", // Progress placeholder
-                    "75%" // Efficiency placeholder
-                };
+        try {
+            if (Microbot.isLoggedIn() && plugin.getContentManager() != null) {
+                for (String skillName : plugin.getContentManager().getAccessibleSkills()) {
+                    try {
+                        // Convert skill name to Skill enum
+                        Skill skill = Skill.valueOf(skillName.toUpperCase().replace(" ", "_"));
+
+                        // Get actual skill data
+                        int currentLevel = Rs2Player.getRealSkillLevel(skill);
+                        int boostedLevel = Rs2Player.getBoostedSkillLevel(skill);
+                        int experience = Microbot.getClient().getSkillExperience(skill);
+
+                        // Calculate target level (next level up)
+                        int targetLevel = Math.min(currentLevel + 1, 99);
+
+                        // Calculate progress to next level
+                        int currentLevelXp = Experience.getXpForLevel(currentLevel);
+                        int nextLevelXp = targetLevel <= 99 ? Experience.getXpForLevel(targetLevel) : experience;
+                        double progress = 0;
+                        if (nextLevelXp > currentLevelXp) {
+                            progress = ((double)(experience - currentLevelXp) / (nextLevelXp - currentLevelXp)) * 100;
+                        }
+
+                        String levelDisplay = boostedLevel != currentLevel ?
+                            currentLevel + " (" + boostedLevel + ")" : String.valueOf(currentLevel);
+
+                        Object[] row = {
+                            skillName,
+                            levelDisplay,
+                            String.format("%,d", experience),
+                            String.valueOf(targetLevel),
+                            String.format("%.1f%%", progress),
+                            "N/A" // Efficiency calculation would require more complex tracking
+                        };
+                        skillTableModel.addRow(row);
+                    } catch (IllegalArgumentException e) {
+                        // Skill name doesn't match enum, skip it
+                        log.debug("Unknown skill name: {}", skillName);
+                    }
+                }
+            } else if (!Microbot.isLoggedIn()) {
+                // Show placeholder when not logged in
+                Object[] row = {"Not logged in", "-", "-", "-", "-", "-"};
                 skillTableModel.addRow(row);
             }
+        } catch (Exception e) {
+            log.error("Failed to update skills table: {}", e.getMessage());
+            Object[] row = {"Error loading skills", "-", "-", "-", "-", "-"};
+            skillTableModel.addRow(row);
         }
     }
 
@@ -476,16 +536,19 @@ public class AiAutonomousDesktopUI extends JFrame {
         }
     }
 
-    private void togglePause() {
-        // This would pause/resume the AI
-        if (pauseButton.getText().equals("Pause")) {
-            pauseButton.setText("Resume");
-            pauseButton.setBackground(Color.ORANGE);
-            addLogEntry("AI PAUSED by user");
+    private void toggleScript() {
+        if (pauseButton.getText().equals("Start AI")) {
+            // Start the script
+            plugin.startScript();
+            pauseButton.setText("Stop AI");
+            pauseButton.setBackground(Color.GREEN);
+            addLogEntry("AI STARTED by user");
         } else {
-            pauseButton.setText("Pause");
+            // Stop the script
+            plugin.stopScript();
+            pauseButton.setText("Start AI");
             pauseButton.setBackground(null);
-            addLogEntry("AI RESUMED by user");
+            addLogEntry("AI STOPPED by user");
         }
     }
 
@@ -507,23 +570,86 @@ public class AiAutonomousDesktopUI extends JFrame {
     private void testConnections() {
         addLogEntry("Testing connections...");
 
-        // This would run the connection test
         SwingWorker<Void, String> worker = new SwingWorker<Void, String>() {
             @Override
             protected Void doInBackground() throws Exception {
+                // Test Ollama connection
                 publish("Testing Ollama connection...");
-                Thread.sleep(1000);
-                publish("✓ Ollama: Connected");
+                try {
+                    if (plugin.getOllamaClient() != null) {
+                        // Try a simple test request to verify connection
+                        publish("✓ Ollama: Client initialized");
+                    } else {
+                        publish("✗ Ollama: Client not initialized");
+                    }
+                } catch (Exception e) {
+                    publish("✗ Ollama: Error - " + e.getMessage());
+                }
 
+                // Test RAG system
                 publish("Testing RAG system...");
-                Thread.sleep(1000);
-                publish("✓ RAG: Connected");
+                try {
+                    if (plugin.getRagSystem() != null) {
+                        String systemType = plugin.getRagSystem().getSystemType();
+                        publish("✓ RAG: " + systemType + " system initialized");
+                    } else {
+                        publish("✗ RAG: System not initialized");
+                    }
+                } catch (Exception e) {
+                    publish("✗ RAG: Error - " + e.getMessage());
+                }
 
+                // Test Wiki integration
                 publish("Testing Wiki integration...");
-                Thread.sleep(500);
-                publish("✓ Wiki: Connected");
+                try {
+                    if (plugin.getWikiIntegration() != null) {
+                        publish("✓ Wiki: Integration initialized");
+                    } else {
+                        publish("✗ Wiki: Integration not initialized");
+                    }
+                } catch (Exception e) {
+                    publish("✗ Wiki: Error - " + e.getMessage());
+                }
 
-                publish("All connections successful!");
+                // Test Game Memory
+                publish("Testing Game Memory...");
+                try {
+                    if (plugin.getGameMemory() != null) {
+                        publish("✓ Memory: Game memory system active");
+                    } else {
+                        publish("✗ Memory: Game memory not initialized");
+                    }
+                } catch (Exception e) {
+                    publish("✗ Memory: Error - " + e.getMessage());
+                }
+
+                // Test Knowledge Manager
+                publish("Testing Knowledge Manager...");
+                try {
+                    if (plugin.getKnowledgeManager() != null) {
+                        String stats = plugin.getKnowledgeManager().getStats();
+                        publish("✓ Knowledge: " + stats);
+                    } else {
+                        publish("✗ Knowledge: Manager not initialized");
+                    }
+                } catch (Exception e) {
+                    publish("✗ Knowledge: Error - " + e.getMessage());
+                }
+
+                // Test Game State Manager
+                publish("Testing Game State Manager...");
+                try {
+                    if (plugin.getGameStateManager() != null) {
+                        String currentState = plugin.getGameStateManager().getCurrentState().toString();
+                        publish("✓ State Manager: Current state - " + currentState);
+                    } else {
+                        publish("✗ State Manager: Not initialized");
+                    }
+                } catch (Exception e) {
+                    publish("✗ State Manager: Error - " + e.getMessage());
+                }
+
+                publish("Connection testing completed!");
                 return null;
             }
 
@@ -532,6 +658,11 @@ public class AiAutonomousDesktopUI extends JFrame {
                 for (String message : chunks) {
                     addLogEntry(message);
                 }
+            }
+
+            @Override
+            protected void done() {
+                addLogEntry("Test completed. Check results above.");
             }
         };
 

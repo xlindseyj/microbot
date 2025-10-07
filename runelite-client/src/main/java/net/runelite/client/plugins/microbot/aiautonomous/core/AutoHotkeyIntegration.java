@@ -5,6 +5,7 @@ import net.runelite.client.input.KeyListener;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.plugins.microbot.aiautonomous.AiAutonomousConfig;
 import net.runelite.client.plugins.microbot.aiautonomous.AiAutonomousScript;
+import net.runelite.client.plugins.microbot.aiautonomous.AiAutonomousPlugin;
 import net.runelite.client.plugins.microbot.util.keyboard.Rs2Keyboard;
 import net.runelite.client.plugins.microbot.util.Global;
 
@@ -19,6 +20,7 @@ import java.util.Map;
 @Slf4j
 public class AutoHotkeyIntegration implements KeyListener {
 
+    private final AiAutonomousPlugin plugin;
     private final AiAutonomousScript script;
     private final AiAutonomousConfig config;
     private final KeyManager keyManager;
@@ -35,7 +37,8 @@ public class AutoHotkeyIntegration implements KeyListener {
     private boolean automationEnabled = false;
     private boolean emergencyMode = false;
 
-    public AutoHotkeyIntegration(AiAutonomousScript script, AiAutonomousConfig config, KeyManager keyManager) {
+    public AutoHotkeyIntegration(AiAutonomousPlugin plugin, AiAutonomousScript script, AiAutonomousConfig config, KeyManager keyManager) {
+        this.plugin = plugin;
         this.script = script;
         this.config = config;
         this.keyManager = keyManager;
@@ -188,12 +191,12 @@ public class AutoHotkeyIntegration implements KeyListener {
      * Toggle pause/resume AI operations
      */
     private void togglePause() {
-        if (script.isRunning()) {
-            script.shutdown();
+        if (script != null && script.isRunning()) {
+            plugin.stopScript();
             showMessage("AI paused via hotkey");
             log.info("AI paused via hotkey");
         } else {
-            script.run(config);
+            plugin.startScript();
             showMessage("AI resumed via hotkey");
             log.info("AI resumed via hotkey");
         }

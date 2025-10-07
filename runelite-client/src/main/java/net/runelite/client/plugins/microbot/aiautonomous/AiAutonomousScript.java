@@ -98,6 +98,12 @@ public class AiAutonomousScript extends Script {
         sessionStartTime = Instant.now();
         emergencyStopActivated = false;
         log.info("AI Autonomous Script started");
+
+        // Show desktop UI when script starts
+        if (plugin.getDesktopUI() != null) {
+            plugin.getDesktopUI().showUI();
+            log.info("Desktop UI launched with script activation");
+        }
     }
 
     public void onStop() {
@@ -525,7 +531,7 @@ public class AiAutonomousScript extends Script {
             KeyManager keyManager = plugin.getKeyManager();
 
             if (keyManager != null) {
-                autoHotkeyIntegration = new AutoHotkeyIntegration(this, config, keyManager);
+                autoHotkeyIntegration = new AutoHotkeyIntegration(plugin, this, config, keyManager);
                 log.info("AutoHotkey integration initialized successfully");
 
                 // Log available hotkeys for user reference

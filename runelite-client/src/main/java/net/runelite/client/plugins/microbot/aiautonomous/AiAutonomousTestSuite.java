@@ -123,7 +123,7 @@ public class AiAutonomousTestSuite {
             log.info("\n" + "=".repeat(40));
             log.info("AUTOHOTKEY INTEGRATION TESTS");
             log.info("=".repeat(40));
-            AutoHotkeyTest.testAutoHotkeyIntegration(script, config, plugin.getKeyManager());
+            AutoHotkeyTest.testAutoHotkeyIntegration(plugin, script, config, plugin.getKeyManager());
             AutoHotkeyTest.testAIScriptIntegration(script);
 
             // Test all system connections

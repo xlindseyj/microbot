@@ -12,21 +12,21 @@ import java.awt.event.KeyEvent;
 @Slf4j
 public class AutoHotkeyTest {
 
-    public static void testAutoHotkeyIntegration(AiAutonomousScript script, AiAutonomousConfig config, KeyManager keyManager) {
+    public static void testAutoHotkeyIntegration(AiAutonomousPlugin plugin, AiAutonomousScript script, AiAutonomousConfig config, KeyManager keyManager) {
         log.info("Starting AutoHotkey integration tests...");
 
-        testAutoHotkeyInitialization(script, config, keyManager);
-        testHotkeyRegistration(script, config, keyManager);
+        testAutoHotkeyInitialization(plugin, script, config, keyManager);
+        testHotkeyRegistration(plugin, script, config, keyManager);
         testAutomationFeatures(script);
 
         log.info("AutoHotkey integration tests completed");
     }
 
-    private static void testAutoHotkeyInitialization(AiAutonomousScript script, AiAutonomousConfig config, KeyManager keyManager) {
+    private static void testAutoHotkeyInitialization(AiAutonomousPlugin plugin, AiAutonomousScript script, AiAutonomousConfig config, KeyManager keyManager) {
         log.info("Testing AutoHotkey initialization...");
         try {
             if (keyManager != null) {
-                AutoHotkeyIntegration autoHotkey = new AutoHotkeyIntegration(script, config, keyManager);
+                AutoHotkeyIntegration autoHotkey = new AutoHotkeyIntegration(plugin, script, config, keyManager);
                 log.info("✓ AutoHotkey integration created successfully");
 
                 // Test that hotkeys are available
@@ -59,11 +59,11 @@ public class AutoHotkeyTest {
         }
     }
 
-    private static void testHotkeyRegistration(AiAutonomousScript script, AiAutonomousConfig config, KeyManager keyManager) {
+    private static void testHotkeyRegistration(AiAutonomousPlugin plugin, AiAutonomousScript script, AiAutonomousConfig config, KeyManager keyManager) {
         log.info("Testing hotkey registration...");
         try {
             if (keyManager != null) {
-                AutoHotkeyIntegration autoHotkey = new AutoHotkeyIntegration(script, config, keyManager);
+                AutoHotkeyIntegration autoHotkey = new AutoHotkeyIntegration(plugin, script, config, keyManager);
 
                 // Test adding custom hotkeys
                 Runnable testAction = () -> log.info("Custom hotkey test action executed");
